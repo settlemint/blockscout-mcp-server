@@ -8,6 +8,9 @@ class ServerConfig(BaseSettings):
     bens_url: str = "https://bens.services.blockscout.com"  # Add this now for Phase 2
     bens_timeout: float = 30.0  # Default timeout for BENS requests
 
+    chainscout_url: str = "http://chains.blockscout.com"  # Default value for Chainscout API
+    chainscout_timeout: float = 15.0  # Default timeout for Chainscout requests
+
     class Config:
         env_prefix = "BLOCKSCOUT_"  # e.g., BLOCKSCOUT_BS_URL
 

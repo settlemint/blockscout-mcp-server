@@ -18,5 +18,7 @@ ENV BLOCKSCOUT_BS_API_KEY=""
 ENV BLOCKSCOUT_BS_TIMEOUT="120.0"
 ENV BLOCKSCOUT_BENS_URL="https://bens.services.blockscout.com"
 ENV BLOCKSCOUT_BENS_TIMEOUT="30.0"
+ENV BLOCKSCOUT_CHAINSCOUT_URL="http://chains.blockscout.com"
+ENV BLOCKSCOUT_CHAINSCOUT_TIMEOUT="15.0"
 
 CMD ["python", "-m", "blockscout_mcp_server"] 

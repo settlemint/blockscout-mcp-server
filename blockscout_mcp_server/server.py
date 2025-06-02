@@ -6,6 +6,7 @@ from blockscout_mcp_server.tools.get_instructions import __get_instructions__
 from blockscout_mcp_server.tools.search_tools import lookup_token_by_symbol
 from blockscout_mcp_server.tools.contract_tools import get_contract_abi
 from blockscout_mcp_server.tools.address_tools import get_address_info, get_tokens_by_address, nft_tokens_by_address, get_address_logs
+from blockscout_mcp_server.tools.chains_tools import get_chains_list
 
 mcp = FastMCP(name="blockscout-mcp-server", instructions="Blockscout MCP Server v0.1.0")
 
@@ -28,6 +29,7 @@ mcp.tool()(nft_tokens_by_address)
 mcp.tool()(get_transaction_info)
 mcp.tool()(get_transaction_logs)
 mcp.tool()(get_address_logs)
+mcp.tool()(get_chains_list)
 
 def run_server_cli():
     """This function will be called by the script defined in pyproject.toml"""

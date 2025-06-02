@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Dict
 from pydantic import Field
 from blockscout_mcp_server.tools.common import make_blockscout_request
 
@@ -8,7 +8,7 @@ async def get_transactions_by_address(
     age_from: Annotated[Optional[str], Field(description="Start date and time (e.g 2025-05-22T23:00:00.00Z).")] = None,
     age_to: Annotated[Optional[str], Field(description="End date and time (e.g 2025-05-22T22:30:00.00Z).")] = None,
     methods: Annotated[Optional[str], Field(description="A method signature to filter transactions by (e.g 0x304e6ade)")] = None
-) -> dict:
+) -> Dict:
     """
     Get transactions for an address within a specific time range.
     Use cases:
@@ -30,4 +30,100 @@ async def get_transactions_by_address(
         query_params["methods"] = methods
 
     response_data = await make_blockscout_request(api_path=api_path, params=query_params)
-    return response_data 
+    return response_data
+
+async def get_token_transfers_by_address(
+    address: Annotated[str, Field(description="Address which either transfer initiator or transfer receiver")],
+    age_from: Annotated[Optional[str], Field(description="Start date and time (e.g 2025-05-22T23:00:00.00Z). This parameter should be provided in most cases to limit transfers and avoid heavy database queries. Omit only if you absolutely need the full history.")] = None,
+    age_to: Annotated[Optional[str], Field(description="End date and time (e.g 2025-05-22T22:30:00.00Z). Can be omitted to get all transfers up to the current time.")] = None,
+    token: Annotated[Optional[str], Field(description="An ERC-20 token contract address to filter transfers by a specific token. If omitted, returns transfers of all tokens.")] = None
+) -> Dict:
+    """
+    Get ERC-20 token transfers for an address within a specific time range.
+    Use cases:
+      - `get_token_transfers_by_address(address, age_from)` - get all transfers of any ERC-20 token to/from the address since the given date up to the current time
+      - `get_token_transfers_by_address(address, age_from, age_to)` - get all transfers of any ERC-20 token to/from the address between the given dates
+      - `get_token_transfers_by_address(address, age_from, age_to, token)` - get all transfers of the given ERC-20 token to/from the address between the given dates
+    Manipulating `age_from` and `age_to` allows you to paginate through results by time ranges. For example, after getting transfers up to a certain timestamp, you can use that timestamp as `age_to` in the next query to get the next page of older transfers.
+    """
+    api_path = "/api/v2/advanced-filters"
+    query_params = {
+        "transaction_types": "ERC-20",
+        "to_address_hashes_to_include": address,
+        "from_address_hashes_to_include": address
+    }
+    
+    if age_from:
+        query_params["age_from"] = age_from
+    if age_to:
+        query_params["age_to"] = age_to
+    if token:
+        query_params["token_contract_address_hashes_to_include"] = token
+
+    response_data = await make_blockscout_request(api_path=api_path, params=query_params)
+    return response_data
+
+async def transaction_summary(
+    hash: Annotated[str, Field(description="Transaction hash")]
+) -> str:
+    """
+    Get human-readable transaction summaries from Blockscout Transaction Interpreter.
+    Automatically classifies transactions into natural language descriptions (transfers, swaps, NFT sales, DeFi operations)
+    Essential for rapid transaction comprehension, dashboard displays, and initial analysis.
+    Note: Not all transactions can be summarized and accuracy is not guaranteed for complex patterns.
+    """
+    api_path = f"/api/v2/transactions/{hash}/summary"
+
+    response_data = await make_blockscout_request(api_path=api_path)
+    
+    summary = response_data.get("data", {}).get("summaries")
+    if summary:
+        return f"# Transaction Summary from Blockscout Transaction Interpreter\n{summary}"
+    else:
+        return "No summary available."
+
+async def get_transaction_info(
+    hash: Annotated[str, Field(description="Transaction hash")]
+) -> Dict:
+    """
+    Get comprehensive transaction information. 
+    Unlike standard eth_getTransactionByHash, this tool returns enriched data including decoded input parameters, detailed token transfers with token metadata, address information (ENS names, contract verification status, public tags, proxy details), transaction fee breakdown (priority fees, burnt fees) and categorized transaction types. 
+    Essential for transaction analysis, debugging smart contract interactions, tracking DeFi operations.
+    """
+    api_path = f"/api/v2/transactions/{hash}"
+    
+    response_data = await make_blockscout_request(api_path=api_path)
+    return response_data
+
+async def get_transaction_logs(
+    hash: Annotated[str, Field(description="Transaction hash")]
+) -> str:
+    """
+    Get comprehensive transaction logs with decoded event data.
+    Unlike standard eth_getLogs, this tool returns enriched logs including decoded event parameters with types and values, detailed contract information (ENS names, verification status, public tags, proxy details, token metadata), block context, and categorized event signatures.
+    Each log entry includes raw data, decoded method calls, parameter extraction, and contract classifications.
+    Essential for analyzing smart contract events, tracking token transfers, monitoring DeFi protocol interactions, debugging event emissions, and understanding complex multi-contract transaction flows.
+    """
+    api_path = f"/api/v2/transactions/{hash}/logs"
+    
+    response_data = await make_blockscout_request(api_path=api_path)
+    
+    import json
+    logs_json_str = json.dumps(response_data, indent=2)  # Pretty print JSON
+    
+    prefix = """**Items Structure:**
+- `address`: The queried address that emitted these logs (constant across all items)
+- `block_hash/block_number`: Block where the event was emitted
+- `index`: Log position within the block
+- `topics`: Raw indexed event parameters (first topic is event signature hash)
+- `data`: Raw non-indexed event parameters (hex encoded)
+
+**Event Decoding (misleadingly named fields):**
+- `method_call`: **Actually the event signature** (e.g., "Transfer(address indexed from, address indexed to, uint256 value)")
+- `method_id`: **Actually the event signature hash** (first 4 bytes of keccak256 hash)
+- `parameters`: Decoded event parameters with names, types, values, and indexing status
+
+**Transaction logs JSON:**
+"""
+    
+    return f"{prefix}{logs_json_str}"

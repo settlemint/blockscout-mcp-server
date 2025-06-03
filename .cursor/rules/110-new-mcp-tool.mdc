@@ -1,0 +1,271 @@
+---
+description: This rule applies to add a new MCP tool functions
+globs: 
+alwaysApply: false
+---
+# Adding Tools to the MCP Server
+
+## Setting Up New API Endpoints
+
+If your new tool needs to access an API endpoint that is different from the existing Blockscout (dynamically resolved via `get_blockscout_base_url`), BENS (`bens_url`), or Chainscout (`chainscout_url`) endpoints, follow these steps first:
+
+1. **Add endpoint configuration to `blockscout_mcp_server/config.py`**:
+
+   ```python
+   class ServerConfig(BaseSettings):
+       # Existing endpoints (examples)
+       bs_api_key: str = ""
+       bs_timeout: float = 120.0
+       bens_url: str = "https://bens.services.blockscout.com"
+       bens_timeout: float = 30.0
+       chainscout_url: str = "https://chains.blockscout.com"
+       chainscout_timeout: float = 15.0
+       chain_cache_ttl_seconds: int = 1800
+       
+       # Add your new endpoint
+       new_api_url: str = "https://api.example.com"
+       new_api_timeout: float = 60.0
+       # Add API key if needed
+       new_api_key: str = ""
+   ```
+
+2. **Create a request helper function in `blockscout_mcp_server/tools/common.py`**:
+
+   ```python
+   async def make_new_api_request(api_path: str, params: dict | None = None) -> dict:
+       """
+       Make a GET request to the New API.
+       
+       Args:
+           api_path: The API path to request
+           params: Optional query parameters
+           
+       Returns:
+           The JSON response as a dictionary
+           
+       Raises:
+           httpx.HTTPStatusError: If the HTTP request returns an error status code
+           httpx.TimeoutException: If the request times out
+       """
+       async with httpx.AsyncClient(timeout=config.new_api_timeout) as client:
+           if params is None:
+               params = {}
+           if config.new_api_key:
+               params["apikey"] = config.new_api_key  # Adjust based on API requirements
+
+           url = f"{config.new_api_url}{api_path}"
+           response = await client.get(url, params=params)
+           response.raise_for_status()
+           return response.json()
+   ```
+
+3. **Update environment configuration files**:
+   - Add to `.env.example`:
+
+     ```shell
+     BLOCKSCOUT_NEW_API_URL="https://api.example.com"
+     BLOCKSCOUT_NEW_API_KEY=""
+     BLOCKSCOUT_NEW_API_TIMEOUT=60.0
+     ```
+
+   - Add to `Dockerfile`:
+
+     ```dockerfile
+     # Existing environment variables
+     ENV BLOCKSCOUT_BS_API_KEY=""
+     ENV BLOCKSCOUT_BS_TIMEOUT="120.0"
+     ENV BLOCKSCOUT_BENS_URL="https://bens.services.blockscout.com"
+     
+     # New environment variables
+     ENV BLOCKSCOUT_NEW_API_URL="https://api.example.com"
+     ENV BLOCKSCOUT_NEW_API_KEY=""
+     ENV BLOCKSCOUT_NEW_API_TIMEOUT="60.0"
+     ```
+
+## Required File Modifications
+
+When adding a new tool to the MCP server, you need to modify these files:
+
+1. **Create or modify a tool module file** in `blockscout_mcp_server/tools/`:
+   - Choose an existing module (e.g., `block_tools.py`, `address_tools.py`) if your tool fits with existing functionality
+   - Create a new module if your tool introduces a new category of functionality
+
+2. **Register the tool in `blockscout_mcp_server/server.py`**:
+   - Import the tool function
+   - Register it with the MCP server using the `@mcp.tool()` decorator
+
+3. **Update documentation in `AGENTS.md`**:
+   - If you created a new module, add it to the project structure file listing
+   - Add it both in the directory tree structure AND in the "Individual Tool Modules" examples section
+   - If you added a tool to an existing module, update the "Examples" section to include your new tool function
+
+## Tool Function Structure
+
+For tools that query Blockscout API (which now support dynamic chain resolution):
+
+```python
+from typing import Annotated, Optional
+from pydantic import Field
+from blockscout_mcp_server.tools.common import make_blockscout_request, get_blockscout_base_url
+
+async def tool_name(
+    chain_id: Annotated[str, Field(description="The ID of the blockchain")],
+    required_arg: Annotated[str, Field(description="Description of required argument")],
+    optional_arg: Annotated[Optional[str], Field(description="Description of optional argument")] = None
+) -> dict | list[dict] | str:  # Return type depends on response format
+    """
+    Descriptive docstring explaining what the tool does.
+    Include use cases and examples if helpful.
+    """
+    # Construct API path, often with argument interpolation
+    api_path = f"/api/v2/some_endpoint/{required_arg}"
+    
+    # Build query parameters for arguments with position: query
+    query_params = {}
+    if optional_arg:
+        query_params["optional_param"] = optional_arg
+    
+    # Get the Blockscout base URL for the specified chain
+    base_url = await get_blockscout_base_url(chain_id)
+    
+    # Make API request with the dynamic base URL
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path, params=query_params)
+    
+    # Process response based on response template needs
+    # (See response handling approaches below)
+    
+    return processed_result
+```
+
+For tools that use fixed API endpoints (like BENS or other services):
+
+```python
+from typing import Annotated, Optional
+from pydantic import Field
+from blockscout_mcp_server.tools.common import make_bens_request  # or other API helper
+
+async def tool_name(
+    required_arg: Annotated[str, Field(description="Description of required argument")],
+    optional_arg: Annotated[Optional[str], Field(description="Description of optional argument")] = None
+) -> dict | list[dict] | str:  # Return type depends on response format
+    """
+    Descriptive docstring explaining what the tool does.
+    Include use cases and examples if helpful.
+    """
+    # Construct API path, often with argument interpolation
+    api_path = f"/api/v1/some_endpoint/{required_arg}"
+    
+    # Build query parameters for arguments with position: query
+    query_params = {}
+    if optional_arg:
+        query_params["optional_param"] = optional_arg
+    
+    # Make API request
+    response_data = await make_bens_request(api_path=api_path, params=query_params)
+    
+    # Process response based on response template needs
+    # (See response handling approaches below)
+    
+    return processed_result
+```
+
+## Response Handling Approaches
+
+Choose one of these approaches based on the complexity of your response formatting needs:
+
+### 1. Return Full JSON Response (`return_type: dict`)
+
+Use to return entire response:
+
+```python
+return response_data  # Simply return the full JSON response
+```
+
+### 2. Extract Specific Fields (`return_type: dict`)
+
+Use for simple field extraction:
+
+```python
+return {
+    "field1": response_data.get("field1"),
+    "field2": response_data.get("nested", {}).get("field2")
+}
+```
+
+### 3. Process JSON Arrays (`return_type: list[dict]`)
+
+Use when iterating through items and formatting each one:
+
+```python
+items = response_data.get("items", [])
+formatted_items = []
+for item in items:
+    formatted_items.append({
+        "id": item.get("id"),
+        "name": item.get("name"),
+        # Other fields to extract
+    })
+return formatted_items
+```
+
+### 4. Complex String Formatting (`return_type: str`)
+
+Use for responses requiring significant text formatting, conditionals, or loops:
+
+```python
+# Example: Building a complex string with JSON formatting and pagination hints
+items_data = response_data.get("items", [])
+output_parts = ["["]  # Start JSON array
+for i, item in enumerate(items_data):
+    item_str = f"""
+  {{
+    "field1": "{item.get("field1", "")}",
+    "field2": "{item.get("field2", "")}"
+  }}"""
+    output_parts.append(item_str)
+    if i < len(items_data) - 1:
+        output_parts.append(",")
+output_parts.append("]")  # End JSON array
+
+# Add pagination hints if available
+next_page_params = response_data.get("next_page_params")
+if next_page_params:
+    pagination_hint = f"""
+
+----
+To get the next page call tool_name({chain_id}, <args>, "{next_page_params.get("param")}")"""
+    output_parts.append(pagination_hint)
+
+return "".join(output_parts)
+```
+
+### 5. Prefixed/Suffixed Content (`return_type: str`)
+
+Use when adding explanatory text to JSON output:
+
+```python
+import json
+content = json.dumps(response_data, indent=2)  # Pretty-print JSON
+prefix = """
+# Explanatory Title
+This is some explanatory text that helps the user understand the data.
+"""
+return f"{prefix}\n{content}"
+```
+
+## Registering the Tool
+
+After implementing your tool function, register it in `blockscout_mcp_server/server.py`:
+
+```python
+from blockscout_mcp_server.tools.your_module import your_tool_function
+
+# Add to existing tool registrations
+mcp.tool()(your_tool_function)
+```
+
+The MCP server will automatically use:
+
+- Function name as the tool name
+- Function docstring as the tool description
+- Type hints and Field annotations for argument details

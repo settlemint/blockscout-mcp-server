@@ -1,0 +1,118 @@
+## Project Structure
+
+```text
+mcp-server/
+├── blockscout_mcp_server/      # Main Python package for the server
+│   ├── __init__.py             # Makes the directory a Python package
+│   ├── __main__.py             # Entry point for `python -m blockscout_mcp_server`
+│   ├── server.py               # Core server logic: FastMCP instance, tool registration
+│   ├── config.py               # Configuration management (e.g., API keys, timeouts, cache settings)
+│   └── tools/                  # Sub-package for tool implementations
+│       ├── __init__.py         # Initializes the tools sub-package
+│       ├── common.py           # Shared utilities for tools (e.g., HTTP client, chain resolution)
+│       ├── get_instructions.py # Implements the __get_instructions__ tool
+│       ├── ens_tools.py        # Implements ENS-related tools
+│       ├── search_tools.py     # Implements search-related tools (e.g., lookup_token_by_symbol)
+│       ├── contract_tools.py   # Implements contract-related tools (e.g., get_contract_abi)
+│       ├── address_tools.py    # Implements address-related tools (e.g., get_address_info, get_tokens_by_address)
+│       ├── block_tools.py      # Implements block-related tools (e.g., get_latest_block, get_block_info)
+│       ├── transaction_tools.py# Implements transaction-related tools (e.g., get_transactions_by_address, transaction_summary)
+│       └── chains_tools.py     # Implements chain-related tools (e.g., get_chains_list)
+├── Dockerfile                  # For building the Docker image
+├── README.md                   # Project overview, setup, and usage instructions
+├── pyproject.toml              # Project metadata and dependencies (PEP 517/518)
+└── .env.example                # Example environment variables
+```
+
+## Overview of Components
+
+1.  **`mcp-server/` (Root Directory)**
+    *   **`README.md`**:
+        *   Provides a comprehensive overview of the project.
+        *   Includes detailed instructions for local setup (installing dependencies, setting environment variables) and running the server.
+        *   Contains instructions for building and running the server using Docker.
+        *   Lists all available tools and their functionalities.
+    *   **`pyproject.toml`**:
+        *   Manages project metadata (name, version, authors, etc.).
+        *   Lists project dependencies, which will include:
+            *   `mcp`: The Model Context Protocol SDK for Python.
+            *   `httpx`: For making asynchronous HTTP requests to Blockscout APIs.
+            *   `pydantic`: For data validation and settings management (used by `mcp` and `config.py`).
+            *   `pydantic-settings`: For loading configuration from environment variables.
+            *   `python-dotenv` (optional, for development): To load environment variables from a `.env` file.
+        *   Configures the build system (e.g., Hatchling).
+    *   **`Dockerfile`**:
+        *   Defines the steps to create a Docker image for the MCP server.
+        *   Specifies the base Python image.
+        *   Copies the application code into the image.
+        *   Installs Python dependencies listed in `pyproject.toml`.
+        *   Sets up necessary environment variables (can be overridden at runtime).
+        *   Defines the `CMD` or `ENTRYPOINT` to run the MCP server (e.g., `python -m blockscout_mcp_server`).
+    *   **`.env.example`**:
+        *   Provides a template for users to create their own `.env` file for local development.
+        *   Lists all required environment variables, such as:
+            *   `BLOCKSCOUT_BS_API_KEY`: API key for Blockscout API access (if required).
+            *   `BLOCKSCOUT_BS_TIMEOUT`: Timeout for Blockscout API requests.
+            *   `BLOCKSCOUT_BENS_URL`: Base URL for the BENS (Blockscout ENS) API.
+            *   `BLOCKSCOUT_BENS_TIMEOUT`: Timeout for BENS API requests.
+            *   `BLOCKSCOUT_CHAINSCOUT_URL`: URL for the Chainscout API (for chain resolution).
+            *   `BLOCKSCOUT_CHAINSCOUT_TIMEOUT`: Timeout for Chainscout API requests.
+            *   `BLOCKSCOUT_CHAIN_CACHE_TTL_SECONDS`: Time-to-live for chain resolution cache.
+
+2.  **`blockscout_mcp_server/` (Main Python Package)**
+    *   **`__init__.py`**: Standard file to mark the directory as a Python package.
+    *   **`__main__.py`**:
+        *   Serves as the entry point when the package is run as a script (`python -m blockscout_mcp_server`).
+        *   Imports the main execution function (e.g., `run_server()`) from `server.py` and calls it.
+    *   **`server.py`**:
+        *   The heart of the MCP server.
+        *   Initializes a `FastMCP` instance (e.g., `mcp = FastMCP("blockscout-mainnet")`).
+        *   Imports all tool functions from the modules in the `tools/` sub-package.
+        *   Registers each tool with the `FastMCP` instance using the `@mcp.tool()` decorator. This includes:
+            *   Tool name (if different from the function name).
+            *   Tool description (from the function's docstring or explicitly provided).
+            *   Argument type hints and descriptions (using `typing.Annotated` and `pydantic.Field` for descriptions), which `FastMCP` uses to generate the input schema.
+        *   Defines a main function (e.g., `run_server()`) that starts the MCP server using `mcp.run()`, which will handle communication via stdin/stdout by default.
+    *   **`config.py`**:
+        *   Defines a Pydantic `BaseSettings` class to manage server configuration.
+        *   Loads configuration values (e.g., API keys, timeouts, cache settings) from environment variables.
+        *   Provides a singleton configuration object that can be imported and used by other modules, especially by `tools/common.py` for API calls.
+    *   **`tools/` (Sub-package for Tool Implementations)**
+        *   **`__init__.py`**: Marks `tools` as a sub-package. May re-export tool functions for easier import into `server.py`.
+        *   **`common.py`**:
+            *   Contains shared utility functions for all tool modules.
+            *   Implements chain resolution and caching mechanism with `get_blockscout_base_url` function.
+            *   Contains asynchronous HTTP client functions for different API endpoints:
+                *   `make_blockscout_request`: Takes base_url (resolved from chain_id), API path, and parameters for Blockscout API calls.
+                *   `make_bens_request`: For BENS API calls.
+                *   `make_chainscout_request`: For Chainscout API calls.
+            *   These functions handle:
+                *   API key inclusion
+                *   Common HTTP error patterns
+                *   URL construction
+                *   Response parsing
+        *   **Individual Tool Modules** (e.g., `ens_tools.py`, `transaction_tools.py`):
+            *   Each file will group logically related tools.
+            *   Each tool will be implemented as an `async` Python function.
+            *   For Blockscout API tools, functions take `chain_id` as the first parameter followed by other arguments.
+            *   For fixed endpoint tools (like BENS), functions take only the required operation-specific parameters.
+            *   Argument descriptions are provided using `typing.Annotated[str, Field(description="...")]`.
+            *   The function's docstring serves as the tool's description for `FastMCP`.
+            *   Inside each Blockscout API tool function:
+                1.  It uses `get_blockscout_base_url(chain_id)` to dynamically resolve the appropriate Blockscout instance URL.
+                2.  It calls `make_blockscout_request` with the resolved base URL, API path, and query parameters.
+                3.  It processes the JSON response from Blockscout.
+                4.  It transforms this response into the desired output format.
+                    *   If the original `responseTemplate` was `{{.}}`, the function returns the parsed JSON (as a Python dict/list).
+                    *   If the original `responseTemplate` was custom, the function constructs the corresponding Python dictionary.
+                    *   If the original `responseTemplate` involved complex string formatting, the function constructs and returns the final response string.
+                    *   For paginated responses, it includes the chain_id in the pagination hint.
+            *   Examples:
+                *   `get_instructions.py`: Implements `__get_instructions__`, returning a pre-defined multi-line string with instructions and popular chain IDs.
+                *   `chains_tools.py`: Implements `get_chains_list`, returning a formatted list of blockchain chains with their IDs.
+                *   `ens_tools.py`: Implements `get_address_by_ens_name` (fixed BENS endpoint, no chain_id).
+                *   `search_tools.py`: Implements `lookup_token_by_symbol(chain_id, symbol)`.
+                *   `contract_tools.py`: Implements `get_contract_abi(chain_id, address)`.
+                *   `address_tools.py`: Implements `get_address_info(chain_id, address)`, `get_tokens_by_address(chain_id, address, ...)` with pagination.
+                *   `block_tools.py`: Implements `get_block_info(chain_id, number_or_hash)`, `get_latest_block(chain_id)`.
+                *   `transaction_tools.py`: Implements `get_transactions_by_address(chain_id, address, ...)`, `transaction_summary(chain_id, hash)`, etc.

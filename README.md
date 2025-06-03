@@ -1,0 +1,38 @@
+# Blockscout MCP Server
+
+The Model Context Protocol (MCP) is an open protocol designed to allow AI agents, IDEs, and automation tools to consume, query, and analyze structured data through context-aware APIs.
+
+This server wraps Blockscout APIs and exposes blockchain data—balances, tokens, NFTs, contract metadata—via MCP so that AI agents and tools (like Claude, Cursor, or IDEs) can access and analyze it contextually.
+
+**Key Features:**
+
+- Contextual blockchain data access for AI tools
+- Multi-chain support via getting Blockscout instance URLs from Chainscout
+- Custom instructions for MCP host to use the server
+
+## Repository Structure
+
+Refer to [AGENTS.md](AGENTS.md) for the repository structure.
+
+## Tool Descriptions
+
+1. `__get_instructions__()` - Must be called before any other tool. Initializes the MCP server session.
+2. `get_chains_list()` - Returns a list of all known chains.
+3. `get_address_by_ens_name(name)` - Converts an ENS domain name to its corresponding Ethereum address.
+4. `lookup_token_by_symbol(chain_id, symbol)` - Searches for token addresses by symbol or name, returning multiple potential matches.
+5. `get_contract_abi(chain_id, address)` - Retrieves the ABI (Application Binary Interface) for a smart contract.
+6. `get_address_info(chain_id, address)` - Gets comprehensive information about an address including balance, ENS association, contract status, and token details.
+7. `get_tokens_by_address(chain_id, address, ...)` - Returns detailed ERC20 token holdings for an address with enriched metadata and market data.
+8. `get_latest_block(chain_id)` - Returns the latest indexed block number and timestamp.
+9. `get_transactions_by_address(chain_id, address, age_from, age_to, methods)` - Gets transactions for an address within a specific time range with optional method filtering.
+10. `get_token_transfers_by_address(chain_id, address, age_from, age_to, token)` - Returns ERC-20 token transfers for an address within a specific time range.
+11. `transaction_summary(chain_id, hash)` - Provides human-readable transaction summaries using Blockscout Transaction Interpreter.
+12. `nft_tokens_by_address(chain_id, address)` - Retrieves NFT tokens owned by an address, grouped by collection.
+13. `get_block_info(chain_id, number_or_hash)` - Returns block information including timestamp, gas used, burnt fees, and transaction count.
+14. `get_transaction_info(chain_id, hash)` - Gets comprehensive transaction information with decoded input parameters and detailed token transfers.
+15. `get_transaction_logs(chain_id, hash)` - Returns transaction logs with decoded event data.
+16. `get_address_logs(chain_id, address, ...)` - Gets logs emitted by a specific address with decoded event data.
+
+## Example Prompts for AI Agents (to be added)
+
+> _Placeholder_: Practical examples of prompts for chats or IDEs to retrieve and analyze blockchain data via the MCP server will be added in this section.

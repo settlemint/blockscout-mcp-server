@@ -1,9 +1,10 @@
 from typing import Annotated, Optional, Dict
 from pydantic import Field
-from blockscout_mcp_server.tools.common import make_blockscout_request
+from blockscout_mcp_server.tools.common import make_blockscout_request, get_blockscout_base_url
 
 
 async def get_transactions_by_address(
+    chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     address: Annotated[str, Field(description="Address which either sender or receiver of the transaction")],
     age_from: Annotated[Optional[str], Field(description="Start date and time (e.g 2025-05-22T23:00:00.00Z).")] = None,
     age_to: Annotated[Optional[str], Field(description="End date and time (e.g 2025-05-22T22:30:00.00Z).")] = None,
@@ -29,10 +30,12 @@ async def get_transactions_by_address(
     if methods:
         query_params["methods"] = methods
 
-    response_data = await make_blockscout_request(api_path=api_path, params=query_params)
+    base_url = await get_blockscout_base_url(chain_id)
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path, params=query_params)
     return response_data
 
 async def get_token_transfers_by_address(
+    chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     address: Annotated[str, Field(description="Address which either transfer initiator or transfer receiver")],
     age_from: Annotated[Optional[str], Field(description="Start date and time (e.g 2025-05-22T23:00:00.00Z). This parameter should be provided in most cases to limit transfers and avoid heavy database queries. Omit only if you absolutely need the full history.")] = None,
     age_to: Annotated[Optional[str], Field(description="End date and time (e.g 2025-05-22T22:30:00.00Z). Can be omitted to get all transfers up to the current time.")] = None,
@@ -60,10 +63,12 @@ async def get_token_transfers_by_address(
     if token:
         query_params["token_contract_address_hashes_to_include"] = token
 
-    response_data = await make_blockscout_request(api_path=api_path, params=query_params)
+    base_url = await get_blockscout_base_url(chain_id)
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path, params=query_params)
     return response_data
 
 async def transaction_summary(
+    chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     hash: Annotated[str, Field(description="Transaction hash")]
 ) -> str:
     """
@@ -74,7 +79,8 @@ async def transaction_summary(
     """
     api_path = f"/api/v2/transactions/{hash}/summary"
 
-    response_data = await make_blockscout_request(api_path=api_path)
+    base_url = await get_blockscout_base_url(chain_id)
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path)
     
     summary = response_data.get("data", {}).get("summaries")
     if summary:
@@ -83,6 +89,7 @@ async def transaction_summary(
         return "No summary available."
 
 async def get_transaction_info(
+    chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     hash: Annotated[str, Field(description="Transaction hash")]
 ) -> Dict:
     """
@@ -92,10 +99,12 @@ async def get_transaction_info(
     """
     api_path = f"/api/v2/transactions/{hash}"
     
-    response_data = await make_blockscout_request(api_path=api_path)
+    base_url = await get_blockscout_base_url(chain_id)
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path)
     return response_data
 
 async def get_transaction_logs(
+    chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     hash: Annotated[str, Field(description="Transaction hash")]
 ) -> str:
     """
@@ -106,7 +115,8 @@ async def get_transaction_logs(
     """
     api_path = f"/api/v2/transactions/{hash}/logs"
     
-    response_data = await make_blockscout_request(api_path=api_path)
+    base_url = await get_blockscout_base_url(chain_id)
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path)
     
     import json
     logs_json_str = json.dumps(response_data, indent=2)  # Pretty print JSON

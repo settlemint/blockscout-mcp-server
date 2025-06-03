@@ -1,8 +1,9 @@
 from typing import Annotated, List, Dict
 from pydantic import Field
-from blockscout_mcp_server.tools.common import make_blockscout_request
+from blockscout_mcp_server.tools.common import make_blockscout_request, get_blockscout_base_url
 
 async def lookup_token_by_symbol(
+    chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     symbol: Annotated[str, Field(description="Token symbol or name to search for")]
 ) -> List[Dict]:
     """
@@ -11,7 +12,8 @@ async def lookup_token_by_symbol(
     api_path = "/api/v2/search"
     params = {"q": symbol}
     
-    response_data = await make_blockscout_request(api_path=api_path, params=params)
+    base_url = await get_blockscout_base_url(chain_id)
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path, params=params)
     
     # Extract and format items from the response
     items = response_data.get("items", [])

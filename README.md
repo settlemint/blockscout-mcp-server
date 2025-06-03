@@ -16,7 +16,7 @@ Refer to [AGENTS.md](AGENTS.md) for the repository structure.
 
 ## Tool Descriptions
 
-1. `__get_instructions__()` - Must be called before any other tool. Initializes the MCP server session.
+1. `__get_instructions__()` - Provides custom instructions for the MCP host to use the server.
 2. `get_chains_list()` - Returns a list of all known chains.
 3. `get_address_by_ens_name(name)` - Converts an ENS domain name to its corresponding Ethereum address.
 4. `lookup_token_by_symbol(chain_id, symbol)` - Searches for token addresses by symbol or name, returning multiple potential matches.
@@ -36,3 +36,61 @@ Refer to [AGENTS.md](AGENTS.md) for the repository structure.
 ## Example Prompts for AI Agents (to be added)
 
 > _Placeholder_: Practical examples of prompts for chats or IDEs to retrieve and analyze blockchain data via the MCP server will be added in this section.
+
+## Installation & Usage
+
+### Local Installation
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/blockscout/mcp-server.git
+cd mcp-server
+uv pip install -e . # or `pip install -e .`
+```
+
+### Building Docker Image Locally
+
+Build the Docker image with the official tag:
+
+```bash
+docker build -t ghcr.io/blockscout/mcp-server:latest .
+```
+
+### Pulling from GitHub Container Registry
+
+Pull the pre-built image:
+
+```bash
+docker pull ghcr.io/blockscout/mcp-server:latest
+```
+
+### Configuring Claude Desktop
+
+To use this MCP server with Claude Desktop:
+
+1. Open Claude Desktop and click on Settings
+2. Navigate to the "Developer" section
+3. Click "Edit Config"
+4. Open the file `claude_desktop_config.json` and configure the server:
+
+    ```json
+    {
+      "mcpServers": {
+        "blockscout": {
+          "command": "docker",
+          "args": [
+            "run", "--rm", "-i",
+            "ghcr.io/blockscout/mcp-server:latest"
+          ]
+        }
+      }
+    }
+    ```
+
+5. Save the file and restart Claude Desktop
+6. When chatting with Claude, you can now enable the Blockscout MCP Server to allow Claude to access blockchain data
+
+## License
+
+This project is primarily distributed under the terms of the MIT license. See [LICENSE](LICENSE) for details.

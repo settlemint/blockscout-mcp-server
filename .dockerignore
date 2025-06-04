@@ -49,3 +49,9 @@ docs/
 # Cache
 .mypy_cache/
 .pytest_cache/
+
+# Devcontainer
+.devcontainer/
+
+# Cursor
+.cursor/

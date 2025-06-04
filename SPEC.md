@@ -29,7 +29,7 @@ sequenceDiagram
     CS-->>MCP: List of chains
     MCP-->>AI: Formatted chains list
 
-    Note over AI: Agent selects chain_id as per the user's initial prompt
+    Note over AI: Host selects chain_id as per the user's initial prompt
 
     AI->>MCP: get_latest_block with chain_id
     MCP->>CS: GET /api/chains/:id

@@ -7,8 +7,9 @@ from blockscout_mcp_server.tools.search_tools import lookup_token_by_symbol
 from blockscout_mcp_server.tools.contract_tools import get_contract_abi
 from blockscout_mcp_server.tools.address_tools import get_address_info, get_tokens_by_address, nft_tokens_by_address, get_address_logs
 from blockscout_mcp_server.tools.chains_tools import get_chains_list
+from blockscout_mcp_server.constants import SERVER_NAME, SERVER_INSTRUCTIONS
 
-mcp = FastMCP(name="blockscout-mcp-server", instructions="Blockscout MCP Server v0.1.0")
+mcp = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
 
 # Register the tools
 # The name of each tool will be its function name

@@ -63,7 +63,6 @@ def main_command(
         # Run the ASGI app with uvicorn
         uvicorn.run(asgi_app, host=http_host, port=http_port)
     else:
-        print("Starting Blockscout MCP Server in stdio mode")
         # This is the original behavior: run in stdio mode
         mcp.run()
 

@@ -5,6 +5,7 @@ import base64
 import anyio
 from typing import Optional, Callable, Awaitable, Any, Dict
 from blockscout_mcp_server.config import config
+from blockscout_mcp_server.constants import LOG_DATA_TRUNCATION_LIMIT
 from mcp.server.fastmcp import Context
 
 class ChainNotFoundError(ValueError):
@@ -308,6 +309,21 @@ def decode_cursor(cursor: str) -> dict:
         return json.loads(json_string)
     except (TypeError, ValueError, json.JSONDecodeError, base64.binascii.Error) as e:
         raise InvalidCursorError("Invalid or expired cursor provided.") from e
+
+
+def _process_and_truncate_log_items(items: list) -> tuple[list, bool]:
+    """Processes log items, truncating the 'data' field if it exceeds a limit."""
+    processed_items = []
+    was_truncated = False
+    for item in items:
+        item_copy = item.copy()
+        data = item_copy.get("data")
+        if isinstance(data, str) and len(data) > LOG_DATA_TRUNCATION_LIMIT:
+            item_copy["data"] = data[:LOG_DATA_TRUNCATION_LIMIT]
+            item_copy["data_truncated"] = True
+            was_truncated = True
+        processed_items.append(item_copy)
+    return processed_items, was_truncated
 
 
 async def report_and_log_progress(

@@ -10,6 +10,7 @@ from blockscout_mcp_server.tools.common import (
     InvalidCursorError,
     make_metadata_request,
     report_and_log_progress,
+    _process_and_truncate_log_items,
 )
 from mcp.server.fastmcp import Context
 
@@ -124,7 +125,9 @@ async def get_tokens_by_address(
         message="Resolved Blockscout instance URL. Fetching token data..."
     )
     
-    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path, params=params)
+    response_data = await make_blockscout_request(
+        base_url=base_url, api_path=api_path, params=params
+    )
     
     # Report completion
     await report_and_log_progress(
@@ -327,14 +330,16 @@ async def get_address_logs(
 
     # Report completion
     await report_and_log_progress(
-        ctx, progress=2.0, total=2.0,
-        message="Successfully fetched address logs."
+        ctx, progress=2.0, total=2.0, message="Successfully fetched address logs."
     )
 
-    original_items = response_data.get("items", [])
+    original_items, was_truncated = _process_and_truncate_log_items(
+        response_data.get("items", [])
+    )
 
-    transformed_items = [
-        {
+    transformed_items = []
+    for item in original_items:
+        new_item = {
             "block_number": item.get("block_number"),
             "data": item.get("data"),
             "decoded": item.get("decoded"),
@@ -342,8 +347,9 @@ async def get_address_logs(
             "topics": item.get("topics"),
             "transaction_hash": item.get("transaction_hash"),
         }
-        for item in original_items
-    ]
+        if item.get("data_truncated"):
+            new_item["data_truncated"] = True
+        transformed_items.append(new_item)
 
     # Create a dictionary containing ONLY the transformed items.
     transformed_response = {
@@ -353,11 +359,12 @@ async def get_address_logs(
     logs_json_str = json.dumps(transformed_response)  # Compact JSON
     
     prefix = """**Items Structure:**
-    - `block_number`: Block where the event was emitted
-    - `transaction_hash`: Transaction that triggered the event
-    - `index`: Log position within the block
-    - `topics`: Raw indexed event parameters (first topic is event signature hash)
-    - `data`: Raw non-indexed event parameters (hex encoded)
+- `block_number`: Block where the event was emitted
+- `transaction_hash`: Transaction that triggered the event
+- `index`: Log position within the block
+- `topics`: Raw indexed event parameters (first topic is event signature hash)
+- `data`: Raw non-indexed event parameters (hex encoded). **May be truncated.**
+- `data_truncated`: (Optional) `true` if the `data` field was shortened.
 
 **Event Decoding in `decoded` field:**
 - `method_call`: **Actually the event signature** (e.g., "Transfer(address indexed from, address indexed to, uint256 value)")
@@ -377,4 +384,15 @@ async def get_address_logs(
 ----
 To get the next page call get_address_logs(chain_id="{chain_id}", address="{address}", cursor="{next_cursor}")"""
         output += pagination_hint
-    return output 
+    # Add a note about truncated data if it happened
+    if was_truncated:
+        note_on_truncation = f"""
+----
+**Note on Truncated Data:**
+One or more log items in this response had a `data` field that was too large and has been truncated (indicated by `"data_truncated": true`).
+If the full log data is crucial for your analysis, you must first get the `transaction_hash` from the specific log item in the JSON response above. Then, you can retrieve all logs for that single transaction programmatically. For example, using curl:
+`curl "{base_url}/api/v2/transactions/{{THE_TRANSACTION_HASH}}/logs"`
+You would then need to parse the JSON response and find the specific log by its index.
+"""
+        output += note_on_truncation
+    return output

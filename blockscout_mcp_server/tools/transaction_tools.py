@@ -9,6 +9,7 @@ from blockscout_mcp_server.tools.common import (
     decode_cursor,
     encode_cursor,
     InvalidCursorError,
+    _process_and_truncate_log_items,
 )
 from blockscout_mcp_server.config import config
 from mcp.server.fastmcp import Context
@@ -229,7 +230,7 @@ async def get_token_transfers_by_address(
 
 async def transaction_summary(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
-    hash: Annotated[str, Field(description="Transaction hash")],
+    transaction_hash: Annotated[str, Field(description="Transaction hash")],
     ctx: Context
 ) -> str:
     """
@@ -238,10 +239,10 @@ async def transaction_summary(
     Essential for rapid transaction comprehension, dashboard displays, and initial analysis.
     Note: Not all transactions can be summarized and accuracy is not guaranteed for complex patterns.
     """
-    api_path = f"/api/v2/transactions/{hash}/summary"
+    api_path = f"/api/v2/transactions/{transaction_hash}/summary"
 
     # Report start of operation
-    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction summary for {hash} on chain {chain_id}...")
+    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction summary for {transaction_hash} on chain {chain_id}...")
 
     base_url = await get_blockscout_base_url(chain_id)
     
@@ -261,7 +262,7 @@ async def transaction_summary(
 
 async def get_transaction_info(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
-    hash: Annotated[str, Field(description="Transaction hash")],
+    transaction_hash: Annotated[str, Field(description="Transaction hash")],
     ctx: Context,
     include_raw_input: Annotated[Optional[bool], Field(description="If true, includes the raw transaction input data.")] = False
 ) -> Dict:
@@ -271,10 +272,10 @@ async def get_transaction_info(
     By default, the raw transaction input is omitted if a decoded version is available to save context; request it with `include_raw_input=True` only when you truly need the raw hex data.
     Essential for transaction analysis, debugging smart contract interactions, tracking DeFi operations.
     """
-    api_path = f"/api/v2/transactions/{hash}"
+    api_path = f"/api/v2/transactions/{transaction_hash}"
     
     # Report start of operation
-    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction info for {hash} on chain {chain_id}...")
+    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction info for {transaction_hash} on chain {chain_id}...")
     
     base_url = await get_blockscout_base_url(chain_id)
     
@@ -297,7 +298,7 @@ async def get_transaction_info(
 
 async def get_transaction_logs(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
-    hash: Annotated[str, Field(description="Transaction hash")],
+    transaction_hash: Annotated[str, Field(description="Transaction hash")],
     ctx: Context,
     cursor: Annotated[
         Optional[str],
@@ -311,7 +312,7 @@ async def get_transaction_logs(
     Unlike standard eth_getLogs, this tool returns enriched logs, primarily focusing on decoded event parameters with their types and values (if event decoding is applicable).
     Essential for analyzing smart contract events, tracking token transfers, monitoring DeFi protocol interactions, debugging event emissions, and understanding complex multi-contract transaction flows.
     """
-    api_path = f"/api/v2/transactions/{hash}/logs"
+    api_path = f"/api/v2/transactions/{transaction_hash}/logs"
     params = {}
 
     if cursor:
@@ -324,7 +325,7 @@ async def get_transaction_logs(
             )
     
     # Report start of operation
-    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction logs for {hash} on chain {chain_id}...")
+    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction logs for {transaction_hash} on chain {chain_id}...")
     
     base_url = await get_blockscout_base_url(chain_id)
     
@@ -335,10 +336,13 @@ async def get_transaction_logs(
         base_url=base_url, api_path=api_path, params=params
     )
 
-    original_items = response_data.get("items", [])
+    original_items, was_truncated = _process_and_truncate_log_items(
+        response_data.get("items", [])
+    )
 
-    transformed_items = [
-        {
+    transformed_items = []
+    for item in original_items:
+        new_item = {
             "address": item.get("address", {}).get("hash"),
             "block_number": item.get("block_number"),
             "data": item.get("data"),
@@ -346,8 +350,9 @@ async def get_transaction_logs(
             "index": item.get("index"),
             "topics": item.get("topics"),
         }
-        for item in original_items
-    ]
+        if item.get("data_truncated"):
+            new_item["data_truncated"] = True
+        transformed_items.append(new_item)
 
     transformed_response = {
         "items": transformed_items,
@@ -363,8 +368,9 @@ async def get_transaction_logs(
 - `block_number`: Block where the event was emitted
 - `index`: Log position within the block
 - `topics`: Raw indexed event parameters (first topic is event signature hash)
-- `data`: Raw non-indexed event parameters (hex encoded)
+- `data`: Raw non-indexed event parameters (hex encoded). **May be truncated.**
 - `decoded`: If available, the decoded event with its name and parameters
+- `data_truncated`: (Optional) `true` if the `data` field was shortened.
 
 **Event Decoding in `decoded` field:**
 - `method_call`: **Actually the event signature** (e.g., "Transfer(address indexed from, address indexed to, uint256 value)")
@@ -382,7 +388,19 @@ async def get_transaction_logs(
         pagination_hint = f"""
 
 ----
-To get the next page call get_transaction_logs(chain_id=\"{chain_id}\", hash=\"{hash}\", cursor=\"{next_cursor}\")"""
+To get the next page call get_transaction_logs(chain_id=\"{chain_id}\", transaction_hash=\"{transaction_hash}\", cursor=\"{next_cursor}\")"""
         output += pagination_hint
+
+    # Add a note about truncated data if it happened
+    if was_truncated:
+        note_on_truncation = f"""
+----
+**Note on Truncated Data:**
+One or more log items in this response had a `data` field that was too large and has been truncated (indicated by `"data_truncated": true`).
+If the full log data is crucial for your analysis, you can retrieve the complete, untruncated logs for this transaction programmatically. For example, using curl:
+`curl "{base_url}/api/v2/transactions/{transaction_hash}/logs"`
+You would then need to parse the JSON response and find the specific log by its index.
+"""
+        output += note_on_truncation
 
     return output

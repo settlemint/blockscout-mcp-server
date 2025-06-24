@@ -1,8 +1,6 @@
-import pytest
-
 from blockscout_mcp_server.tools.transaction_tools import (
-    _transform_transaction_info,
     _transform_advanced_filter_item,
+    _transform_transaction_info,
 )
 
 
@@ -83,9 +81,7 @@ def test_transform_missing_hash_keys():
         "hash": "0x5",
         "from": {},
         "to": {"hash": "0xto"},
-        "token_transfers": [
-            {"from": {}, "to": {"hash": "0xy"}}
-        ],
+        "token_transfers": [{"from": {}, "to": {"hash": "0xy"}}],
         "status": "ok",
     }
 

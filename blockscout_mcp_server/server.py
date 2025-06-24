@@ -1,16 +1,29 @@
+from typing import Annotated
+
 import typer
 import uvicorn
-from typing_extensions import Annotated
 from mcp.server.fastmcp import FastMCP
+
+from blockscout_mcp_server.constants import SERVER_INSTRUCTIONS, SERVER_NAME
+from blockscout_mcp_server.tools.address_tools import (
+    get_address_info,
+    get_address_logs,
+    get_tokens_by_address,
+    nft_tokens_by_address,
+)
 from blockscout_mcp_server.tools.block_tools import get_block_info, get_latest_block
+from blockscout_mcp_server.tools.chains_tools import get_chains_list
+from blockscout_mcp_server.tools.contract_tools import get_contract_abi
 from blockscout_mcp_server.tools.ens_tools import get_address_by_ens_name
-from blockscout_mcp_server.tools.transaction_tools import get_transactions_by_address, get_token_transfers_by_address, transaction_summary, get_transaction_info, get_transaction_logs
 from blockscout_mcp_server.tools.get_instructions import __get_instructions__
 from blockscout_mcp_server.tools.search_tools import lookup_token_by_symbol
-from blockscout_mcp_server.tools.contract_tools import get_contract_abi
-from blockscout_mcp_server.tools.address_tools import get_address_info, get_tokens_by_address, nft_tokens_by_address, get_address_logs
-from blockscout_mcp_server.tools.chains_tools import get_chains_list
-from blockscout_mcp_server.constants import SERVER_NAME, SERVER_INSTRUCTIONS
+from blockscout_mcp_server.tools.transaction_tools import (
+    get_token_transfers_by_address,
+    get_transaction_info,
+    get_transaction_logs,
+    get_transactions_by_address,
+    transaction_summary,
+)
 
 mcp = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
 
@@ -38,10 +51,13 @@ mcp.tool()(get_chains_list)
 # Create a Typer application for our CLI
 cli_app = typer.Typer()
 
+
 @cli_app.command()
 def main_command(
     http: Annotated[bool, typer.Option("--http", help="Run server in HTTP Streamable mode.")] = False,
-    http_host: Annotated[str, typer.Option("--http-host", help="Host for HTTP server if --http is used.")] = "127.0.0.1",
+    http_host: Annotated[
+        str, typer.Option("--http-host", help="Host for HTTP server if --http is used.")
+    ] = "127.0.0.1",
     http_port: Annotated[int, typer.Option("--http-port", help="Port for HTTP server if --http is used.")] = 8000,
 ):
     """
@@ -54,7 +70,7 @@ def main_command(
         # Configure the existing 'mcp' instance for stateless HTTP with JSON responses
         # The FastMCP server has a 'settings' attribute that can be used for this.
         mcp.settings.stateless_http = True  # Enable stateless mode
-        mcp.settings.json_response = True   # Enable JSON responses instead of SSE for tool calls
+        mcp.settings.json_response = True  # Enable JSON responses instead of SSE for tool calls
 
         # Get the ASGI application from our FastMCP instance
         # This app is what uvicorn will serve.
@@ -66,10 +82,12 @@ def main_command(
         # This is the original behavior: run in stdio mode
         mcp.run()
 
+
 def run_server_cli():
     """This function will be called by the script defined in pyproject.toml"""
     cli_app()
 
+
 if __name__ == "__main__":
     # This allows running the server directly with `python blockscout_mcp_server/server.py`
-    run_server_cli() 
+    run_server_cli()

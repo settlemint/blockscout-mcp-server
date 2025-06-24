@@ -1,6 +1,6 @@
-# .github/workflows/ci.yml
+# .github/workflows/ci-lint.yml
 
-name: CI - Run Unit Tests
+name: CI - Lint & Format
 
 # This workflow runs on every push to any branch, and on any pull requests.
 on:
@@ -10,8 +10,8 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: Run Unit Tests
+  ruff:
+    name: Ruff Lint & Format
     # The job will run on the latest version of Ubuntu
     runs-on: ubuntu-latest
 
@@ -46,11 +46,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[test]"
+          pip install -e ".[dev]"
 
-      # Step 5: Run the unit tests with code coverage.
-      # Pytest will automatically run all tests that are NOT marked with @pytest.mark.integration.
-      # This is the core of our "fast feedback" strategy.
-      - name: Run unit tests with coverage
-        run: |
-          pytest --cov=blockscout_mcp_server --cov-report=xml
+      # Step 5: Run Ruff lint and format.
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format (check only)
+        run: ruff format --check .

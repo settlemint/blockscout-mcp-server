@@ -1,12 +1,13 @@
 # tests/tools/test_transaction_tools_2.py
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-import httpx
-
-from blockscout_mcp_server.tools.transaction_tools import get_transaction_info, get_transaction_logs
-from blockscout_mcp_server.tools.common import encode_cursor
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
 from blockscout_mcp_server.constants import INPUT_DATA_TRUNCATION_LIMIT
+from blockscout_mcp_server.tools.transaction_tools import get_transaction_info, get_transaction_logs
+
 
 @pytest.mark.asyncio
 async def test_get_transaction_info_success(mock_ctx):
@@ -31,7 +32,7 @@ async def test_get_transaction_info_success(mock_ctx):
         "status": "ok",
         "timestamp": "2024-01-01T12:00:00.000000Z",
         "transaction_index": 42,
-        "nonce": 123
+        "nonce": 123,
     }
 
     expected_transformed_result = {
@@ -49,9 +50,14 @@ async def test_get_transaction_info_success(mock_ctx):
         "nonce": 123,
     }
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
 
@@ -60,10 +66,7 @@ async def test_get_transaction_info_success(mock_ctx):
 
         # ASSERT
         mock_get_url.assert_called_once_with(chain_id)
-        mock_request.assert_called_once_with(
-            base_url=mock_base_url,
-            api_path=f"/api/v2/transactions/{hash}"
-        )
+        mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{hash}")
         assert result == expected_transformed_result
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
@@ -75,14 +78,16 @@ async def test_get_transaction_info_no_truncation(mock_ctx):
     chain_id = "1"
     tx_hash = "0x123"
     mock_base_url = "https://eth.blockscout.com"
-    mock_api_response = {
-        "hash": tx_hash,
-        "decoded_input": {"parameters": ["short_string"]},
-        "raw_input": "0xshort"
-    }
+    mock_api_response = {"hash": tx_hash, "decoded_input": {"parameters": ["short_string"]}, "raw_input": "0xshort"}
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response.copy()
 
@@ -101,14 +106,16 @@ async def test_get_transaction_info_truncates_raw_input(mock_ctx):
     tx_hash = "0x123"
     mock_base_url = "https://eth.blockscout.com"
     long_raw_input = "0x" + "a" * INPUT_DATA_TRUNCATION_LIMIT
-    mock_api_response = {
-        "hash": tx_hash,
-        "decoded_input": None,
-        "raw_input": long_raw_input
-    }
+    mock_api_response = {"hash": tx_hash, "decoded_input": None, "raw_input": long_raw_input}
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response.copy()
 
@@ -131,14 +138,16 @@ async def test_get_transaction_info_truncates_decoded_input(mock_ctx):
     tx_hash = "0x123"
     mock_base_url = "https://eth.blockscout.com"
     long_param = "0x" + "a" * INPUT_DATA_TRUNCATION_LIMIT
-    mock_api_response = {
-        "hash": tx_hash,
-        "decoded_input": {"parameters": [long_param]},
-        "raw_input": "0xshort"
-    }
+    mock_api_response = {"hash": tx_hash, "decoded_input": {"parameters": [long_param]}, "raw_input": "0xshort"}
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response.copy()
 
@@ -162,18 +171,22 @@ async def test_get_transaction_info_keeps_and_truncates_raw_input_when_flagged(m
     tx_hash = "0x123"
     mock_base_url = "https://eth.blockscout.com"
     long_raw_input = "0x" + "a" * INPUT_DATA_TRUNCATION_LIMIT
-    mock_api_response = {
-        "hash": tx_hash,
-        "decoded_input": {"parameters": ["short"]},
-        "raw_input": long_raw_input
-    }
+    mock_api_response = {"hash": tx_hash, "decoded_input": {"parameters": ["short"]}, "raw_input": long_raw_input}
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response.copy()
 
-        result = await get_transaction_info(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx, include_raw_input=True)
+        result = await get_transaction_info(
+            chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx, include_raw_input=True
+        )
 
         assert isinstance(result, str)
         assert "**Note on Truncated Data:**" in result
@@ -184,6 +197,8 @@ async def test_get_transaction_info_keeps_and_truncates_raw_input_when_flagged(m
         assert "raw_input" in data
         assert data["raw_input_truncated"] is True
         assert len(data["raw_input"]) == INPUT_DATA_TRUNCATION_LIMIT
+
+
 @pytest.mark.asyncio
 async def test_get_transaction_info_not_found(mock_ctx):
     """
@@ -196,9 +211,14 @@ async def test_get_transaction_info_not_found(mock_ctx):
 
     api_error = httpx.HTTPStatusError("Not Found", request=MagicMock(), response=MagicMock(status_code=404))
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.side_effect = api_error
 
@@ -207,10 +227,8 @@ async def test_get_transaction_info_not_found(mock_ctx):
             await get_transaction_info(chain_id=chain_id, transaction_hash=hash, ctx=mock_ctx)
 
         mock_get_url.assert_called_once_with(chain_id)
-        mock_request.assert_called_once_with(
-            base_url=mock_base_url,
-            api_path=f"/api/v2/transactions/{hash}"
-        )
+        mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{hash}")
+
 
 @pytest.mark.asyncio
 async def test_get_transaction_info_chain_not_found(mock_ctx):
@@ -222,9 +240,12 @@ async def test_get_transaction_info_chain_not_found(mock_ctx):
     hash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 
     from blockscout_mcp_server.tools.common import ChainNotFoundError
+
     chain_error = ChainNotFoundError(f"Chain with ID '{chain_id}' not found on Chainscout.")
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url:
+    with patch(
+        "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+    ) as mock_get_url:
         mock_get_url.side_effect = chain_error
 
         # ACT & ASSERT
@@ -232,6 +253,7 @@ async def test_get_transaction_info_chain_not_found(mock_ctx):
             await get_transaction_info(chain_id=chain_id, transaction_hash=hash, ctx=mock_ctx)
 
         mock_get_url.assert_called_once_with(chain_id)
+
 
 @pytest.mark.asyncio
 async def test_get_transaction_info_minimal_response(mock_ctx):
@@ -245,13 +267,18 @@ async def test_get_transaction_info_minimal_response(mock_ctx):
 
     mock_api_response = {
         "hash": hash,
-        "status": "pending"
+        "status": "pending",
         # Minimal response with most fields missing
     }
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
 
@@ -260,10 +287,7 @@ async def test_get_transaction_info_minimal_response(mock_ctx):
 
         # ASSERT
         mock_get_url.assert_called_once_with(chain_id)
-        mock_request.assert_called_once_with(
-            base_url=mock_base_url,
-            api_path=f"/api/v2/transactions/{hash}"
-        )
+        mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{hash}")
         expected_result = {"status": "pending"}
         assert result == expected_result
         assert mock_ctx.report_progress.call_count == 3
@@ -315,9 +339,14 @@ async def test_get_transaction_info_with_token_transfers_transformation(mock_ctx
         ],
     }
 
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
 
@@ -326,6 +355,7 @@ async def test_get_transaction_info_with_token_transfers_transformation(mock_ctx
 
         # ASSERT
         assert result == expected_transformed_result
+
 
 @pytest.mark.asyncio
 async def test_get_transaction_logs_success(mock_ctx):
@@ -360,7 +390,7 @@ async def test_get_transaction_logs_success(mock_ctx):
                 "block_hash": "0xblockhash2...",
                 "decoded": {"name": "EventB"},
                 "index": 1,
-            }
+            },
         ],
     }
 
@@ -386,10 +416,15 @@ async def test_get_transaction_logs_success(mock_ctx):
     }
 
     # Patch json.dumps in the transaction_tools module
-    with patch('blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.transaction_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request, \
-         patch('blockscout_mcp_server.tools.transaction_tools.json.dumps') as mock_json_dumps:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+        patch("blockscout_mcp_server.tools.transaction_tools.json.dumps") as mock_json_dumps,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
         # We don't care what json.dumps returns, only that it's called correctly
@@ -404,16 +439,12 @@ async def test_get_transaction_logs_success(mock_ctx):
 
         mock_get_url.assert_called_once_with(chain_id)
         mock_request.assert_called_once_with(
-            base_url=mock_base_url,
-            api_path=f"/api/v2/transactions/{hash}/logs",
-            params={}
+            base_url=mock_base_url, api_path=f"/api/v2/transactions/{hash}/logs", params={}
         )
-        
+
         # Verify the result starts with the expected prefix
         expected_prefix = "**Items Structure:**"
         assert result.startswith(expected_prefix)
 
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
-
-

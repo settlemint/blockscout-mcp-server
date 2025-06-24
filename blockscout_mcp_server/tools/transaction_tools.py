@@ -1,20 +1,22 @@
 import json
-from typing import Annotated, Optional, Dict
+from typing import Annotated
+
+from mcp.server.fastmcp import Context
 from pydantic import Field
+
+from blockscout_mcp_server.config import config
+from blockscout_mcp_server.constants import INPUT_DATA_TRUNCATION_LIMIT
 from blockscout_mcp_server.tools.common import (
-    make_blockscout_request,
-    get_blockscout_base_url,
-    make_request_with_periodic_progress,
-    report_and_log_progress,
-    decode_cursor,
-    encode_cursor,
     InvalidCursorError,
     _process_and_truncate_log_items,
     _recursively_truncate_and_flag_long_strings,
+    decode_cursor,
+    encode_cursor,
+    get_blockscout_base_url,
+    make_blockscout_request,
+    make_request_with_periodic_progress,
+    report_and_log_progress,
 )
-from blockscout_mcp_server.config import config
-from blockscout_mcp_server.constants import INPUT_DATA_TRUNCATION_LIMIT
-from mcp.server.fastmcp import Context
 
 
 def _transform_advanced_filter_item(item: dict, fields_to_remove: list[str]) -> dict:
@@ -83,9 +85,7 @@ def _transform_transaction_info(data: dict) -> dict:
         transformed_data["to"] = transformed_data["to"].get("hash")
 
     # 3. Optimize the 'token_transfers' list
-    if "token_transfers" in transformed_data and isinstance(
-        transformed_data["token_transfers"], list
-    ):
+    if "token_transfers" in transformed_data and isinstance(transformed_data["token_transfers"], list):
         optimized_transfers = []
         for transfer in transformed_data["token_transfers"]:
             if isinstance(transfer.get("from"), dict):
@@ -109,10 +109,12 @@ async def get_transactions_by_address(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     address: Annotated[str, Field(description="Address which either sender or receiver of the transaction")],
     ctx: Context,
-    age_from: Annotated[Optional[str], Field(description="Start date and time (e.g 2025-05-22T23:00:00.00Z).")] = None,
-    age_to: Annotated[Optional[str], Field(description="End date and time (e.g 2025-05-22T22:30:00.00Z).")] = None,
-    methods: Annotated[Optional[str], Field(description="A method signature to filter transactions by (e.g 0x304e6ade)")] = None,
-) -> Dict:
+    age_from: Annotated[str | None, Field(description="Start date and time (e.g 2025-05-22T23:00:00.00Z).")] = None,
+    age_to: Annotated[str | None, Field(description="End date and time (e.g 2025-05-22T22:30:00.00Z).")] = None,
+    methods: Annotated[
+        str | None, Field(description="A method signature to filter transactions by (e.g 0x304e6ade)")
+    ] = None,
+) -> dict:
     """
     Get transactions for an address within a specific time range.
     Use cases:
@@ -120,12 +122,9 @@ async def get_transactions_by_address(
       - `get_transactions_by_address(address, age_from, age_to)` - get all transactions to/from the address between the given dates
       - `get_transactions_by_address(address, age_from, age_to, methods)` - get all transactions to/from the address between the given dates and invoking the given method signature
     Manipulating `age_from` and `age_to` allows you to paginate through results by time ranges.
-    """
+    """  # noqa: E501
     api_path = "/api/v2/advanced-filters"
-    query_params = {
-        "to_address_hashes_to_include": address,
-        "from_address_hashes_to_include": address
-    }
+    query_params = {"to_address_hashes_to_include": address, "from_address_hashes_to_include": address}
     if age_from:
         query_params["age_from"] = age_from
     if age_to:
@@ -136,21 +135,23 @@ async def get_transactions_by_address(
     tool_overall_total_steps = 2.0
 
     # Report start of operation
-    await report_and_log_progress(ctx, 
-        progress=0.0, 
-        total=tool_overall_total_steps, 
-        message=f"Starting to fetch transactions for {address} on chain {chain_id}..."
+    await report_and_log_progress(
+        ctx,
+        progress=0.0,
+        total=tool_overall_total_steps,
+        message=f"Starting to fetch transactions for {address} on chain {chain_id}...",
     )
 
     base_url = await get_blockscout_base_url(chain_id)
-    
+
     # Report progress after resolving Blockscout URL
-    await report_and_log_progress(ctx, 
-        progress=1.0, 
-        total=tool_overall_total_steps, 
-        message="Resolved Blockscout instance URL. Now fetching transactions..."
+    await report_and_log_progress(
+        ctx,
+        progress=1.0,
+        total=tool_overall_total_steps,
+        message="Resolved Blockscout instance URL. Now fetching transactions...",
     )
-    
+
     # Use the periodic progress wrapper for the potentially long-running API call
     response_data = await make_request_with_periodic_progress(
         ctx=ctx,
@@ -165,9 +166,9 @@ async def get_transactions_by_address(
         in_progress_message_template="Query in progress... ({elapsed_seconds:.0f}s / {total_hint:.0f}s hint)",
         tool_overall_total_steps=tool_overall_total_steps,
         current_step_number=2.0,  # This is the 2nd step of the tool
-        current_step_message_prefix="Fetching transactions"
+        current_step_message_prefix="Fetching transactions",
     )
-    
+
     # The wrapper make_request_with_periodic_progress handles the final progress report for this step.
     # So, no explicit ctx.report_progress(progress=2.0, ...) is needed here.
 
@@ -179,21 +180,35 @@ async def get_transactions_by_address(
         "token_transfer_index",
     ]
 
-    transformed_items = [
-        _transform_advanced_filter_item(item, fields_to_remove) for item in original_items
-    ]
+    transformed_items = [_transform_advanced_filter_item(item, fields_to_remove) for item in original_items]
 
     response_data["items"] = transformed_items
     return response_data
+
 
 async def get_token_transfers_by_address(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     address: Annotated[str, Field(description="Address which either transfer initiator or transfer receiver")],
     ctx: Context,
-    age_from: Annotated[Optional[str], Field(description="Start date and time (e.g 2025-05-22T23:00:00.00Z). This parameter should be provided in most cases to limit transfers and avoid heavy database queries. Omit only if you absolutely need the full history.")] = None,
-    age_to: Annotated[Optional[str], Field(description="End date and time (e.g 2025-05-22T22:30:00.00Z). Can be omitted to get all transfers up to the current time.")] = None,
-    token: Annotated[Optional[str], Field(description="An ERC-20 token contract address to filter transfers by a specific token. If omitted, returns transfers of all tokens.")] = None,
-) -> Dict:
+    age_from: Annotated[
+        str | None,
+        Field(
+            description="Start date and time (e.g 2025-05-22T23:00:00.00Z). This parameter should be provided in most cases to limit transfers and avoid heavy database queries. Omit only if you absolutely need the full history."  # noqa: E501
+        ),
+    ] = None,
+    age_to: Annotated[
+        str | None,
+        Field(
+            description="End date and time (e.g 2025-05-22T22:30:00.00Z). Can be omitted to get all transfers up to the current time."  # noqa: E501
+        ),
+    ] = None,
+    token: Annotated[
+        str | None,
+        Field(
+            description="An ERC-20 token contract address to filter transfers by a specific token. If omitted, returns transfers of all tokens."  # noqa: E501
+        ),
+    ] = None,
+) -> dict:
     """
     Get ERC-20 token transfers for an address within a specific time range.
     Use cases:
@@ -201,14 +216,14 @@ async def get_token_transfers_by_address(
       - `get_token_transfers_by_address(address, age_from, age_to)` - get all transfers of any ERC-20 token to/from the address between the given dates
       - `get_token_transfers_by_address(address, age_from, age_to, token)` - get all transfers of the given ERC-20 token to/from the address between the given dates
     Manipulating `age_from` and `age_to` allows you to paginate through results by time ranges. For example, after getting transfers up to a certain timestamp, you can use that timestamp as `age_to` in the next query to get the next page of older transfers.
-    """
+    """  # noqa: E501
     api_path = "/api/v2/advanced-filters"
     query_params = {
         "transaction_types": "ERC-20",
         "to_address_hashes_to_include": address,
-        "from_address_hashes_to_include": address
+        "from_address_hashes_to_include": address,
     }
-    
+
     if age_from:
         query_params["age_from"] = age_from
     if age_to:
@@ -219,21 +234,23 @@ async def get_token_transfers_by_address(
     tool_overall_total_steps = 2.0
 
     # Report start of operation
-    await report_and_log_progress(ctx, 
+    await report_and_log_progress(
+        ctx,
         progress=0.0,
         total=tool_overall_total_steps,
-        message=f"Starting to fetch token transfers for {address} on chain {chain_id}..."
+        message=f"Starting to fetch token transfers for {address} on chain {chain_id}...",
     )
 
     base_url = await get_blockscout_base_url(chain_id)
-    
+
     # Report progress after resolving Blockscout URL
-    await report_and_log_progress(ctx, 
+    await report_and_log_progress(
+        ctx,
         progress=1.0,
         total=tool_overall_total_steps,
-        message="Resolved Blockscout instance URL. Now fetching token transfers..."
+        message="Resolved Blockscout instance URL. Now fetching token transfers...",
     )
-    
+
     # Use the periodic progress wrapper for the potentially long-running API call
     response_data = await make_request_with_periodic_progress(
         ctx=ctx,
@@ -248,76 +265,92 @@ async def get_token_transfers_by_address(
         in_progress_message_template="Query in progress... ({elapsed_seconds:.0f}s / {total_hint:.0f}s hint)",
         tool_overall_total_steps=tool_overall_total_steps,
         current_step_number=2.0,  # This is the 2nd step of the tool
-        current_step_message_prefix="Fetching token transfers"
+        current_step_message_prefix="Fetching token transfers",
     )
-    
+
     # The wrapper make_request_with_periodic_progress handles the final progress report for this step.
     # So, no explicit ctx.report_progress(progress=2.0, ...) is needed here.
 
     original_items = response_data.get("items", [])
     fields_to_remove = ["value", "internal_transaction_index", "created_contract"]
 
-    transformed_items = [
-        _transform_advanced_filter_item(item, fields_to_remove) for item in original_items
-    ]
+    transformed_items = [_transform_advanced_filter_item(item, fields_to_remove) for item in original_items]
 
     response_data["items"] = transformed_items
     return response_data
 
+
 async def transaction_summary(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     transaction_hash: Annotated[str, Field(description="Transaction hash")],
-    ctx: Context
+    ctx: Context,
 ) -> str:
     """
     Get human-readable transaction summaries from Blockscout Transaction Interpreter.
     Automatically classifies transactions into natural language descriptions (transfers, swaps, NFT sales, DeFi operations)
     Essential for rapid transaction comprehension, dashboard displays, and initial analysis.
     Note: Not all transactions can be summarized and accuracy is not guaranteed for complex patterns.
-    """
+    """  # noqa: E501
     api_path = f"/api/v2/transactions/{transaction_hash}/summary"
 
     # Report start of operation
-    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction summary for {transaction_hash} on chain {chain_id}...")
+    await report_and_log_progress(
+        ctx,
+        progress=0.0,
+        total=2.0,
+        message=f"Starting to fetch transaction summary for {transaction_hash} on chain {chain_id}...",
+    )
 
     base_url = await get_blockscout_base_url(chain_id)
-    
+
     # Report progress after resolving Blockscout URL
-    await report_and_log_progress(ctx, progress=1.0, total=2.0, message="Resolved Blockscout instance URL. Fetching transaction summary...")
-    
+    await report_and_log_progress(
+        ctx, progress=1.0, total=2.0, message="Resolved Blockscout instance URL. Fetching transaction summary..."
+    )
+
     response_data = await make_blockscout_request(base_url=base_url, api_path=api_path)
-    
+
     # Report completion
     await report_and_log_progress(ctx, progress=2.0, total=2.0, message="Successfully fetched transaction summary.")
-    
+
     summary = response_data.get("data", {}).get("summaries")
     if summary:
         return f"# Transaction Summary from Blockscout Transaction Interpreter\n{summary}"
     else:
         return "No summary available."
 
+
 async def get_transaction_info(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     transaction_hash: Annotated[str, Field(description="Transaction hash")],
     ctx: Context,
-    include_raw_input: Annotated[Optional[bool], Field(description="If true, includes the raw transaction input data.")] = False
-) -> Dict | str:
+    include_raw_input: Annotated[
+        bool | None, Field(description="If true, includes the raw transaction input data.")
+    ] = False,
+) -> dict | str:
     """
-    Get comprehensive transaction information. 
+    Get comprehensive transaction information.
     Unlike standard eth_getTransactionByHash, this tool returns enriched data including decoded input parameters, detailed token transfers with token metadata, transaction fee breakdown (priority fees, burnt fees) and categorized transaction types.
     By default, the raw transaction input is omitted if a decoded version is available to save context; request it with `include_raw_input=True` only when you truly need the raw hex data.
     Essential for transaction analysis, debugging smart contract interactions, tracking DeFi operations.
-    """
+    """  # noqa: E501
     api_path = f"/api/v2/transactions/{transaction_hash}"
-    
+
     # Report start of operation
-    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction info for {transaction_hash} on chain {chain_id}...")
-    
+    await report_and_log_progress(
+        ctx,
+        progress=0.0,
+        total=2.0,
+        message=f"Starting to fetch transaction info for {transaction_hash} on chain {chain_id}...",
+    )
+
     base_url = await get_blockscout_base_url(chain_id)
-    
+
     # Report progress after resolving Blockscout URL
-    await report_and_log_progress(ctx, progress=1.0, total=2.0, message="Resolved Blockscout instance URL. Fetching transaction data...")
-    
+    await report_and_log_progress(
+        ctx, progress=1.0, total=2.0, message="Resolved Blockscout instance URL. Fetching transaction data..."
+    )
+
     response_data = await make_blockscout_request(base_url=base_url, api_path=api_path)
 
     # Report completion
@@ -340,26 +373,25 @@ async def get_transaction_info(
 One or more large data fields in this response have been truncated (indicated by "value_truncated": true or "raw_input_truncated": true).
 
 To get the full, untruncated data, you can retrieve it programmatically. For example, using curl:
-`curl "{str(base_url).rstrip('/')}/api/v2/transactions/{transaction_hash}"`
-"""
+`curl "{str(base_url).rstrip("/")}/api/v2/transactions/{transaction_hash}"`
+"""  # noqa: E501
     return f"{output_json}{note}"
+
 
 async def get_transaction_logs(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     transaction_hash: Annotated[str, Field(description="Transaction hash")],
     ctx: Context,
     cursor: Annotated[
-        Optional[str],
-        Field(
-            description="The pagination cursor from a previous response to get the next page of results."
-        ),
+        str | None,
+        Field(description="The pagination cursor from a previous response to get the next page of results."),
     ] = None,
 ) -> str:
     """
     Get comprehensive transaction logs.
     Unlike standard eth_getLogs, this tool returns enriched logs, primarily focusing on decoded event parameters with their types and values (if event decoding is applicable).
     Essential for analyzing smart contract events, tracking token transfers, monitoring DeFi protocol interactions, debugging event emissions, and understanding complex multi-contract transaction flows.
-    """
+    """  # noqa: E501
     api_path = f"/api/v2/transactions/{transaction_hash}/logs"
     params = {}
 
@@ -368,25 +400,26 @@ async def get_transaction_logs(
             decoded_params = decode_cursor(cursor)
             params.update(decoded_params)
         except InvalidCursorError:
-            return (
-                "Error: Invalid or expired pagination cursor. Please make a new request without the cursor to start over."
-            )
-    
+            return "Error: Invalid or expired pagination cursor. Please make a new request without the cursor to start over."  # noqa: E501
+
     # Report start of operation
-    await report_and_log_progress(ctx, progress=0.0, total=2.0, message=f"Starting to fetch transaction logs for {transaction_hash} on chain {chain_id}...")
-    
-    base_url = await get_blockscout_base_url(chain_id)
-    
-    # Report progress after resolving Blockscout URL
-    await report_and_log_progress(ctx, progress=1.0, total=2.0, message="Resolved Blockscout instance URL. Fetching transaction logs...")
-    
-    response_data = await make_blockscout_request(
-        base_url=base_url, api_path=api_path, params=params
+    await report_and_log_progress(
+        ctx,
+        progress=0.0,
+        total=2.0,
+        message=f"Starting to fetch transaction logs for {transaction_hash} on chain {chain_id}...",
     )
 
-    original_items, was_truncated = _process_and_truncate_log_items(
-        response_data.get("items", [])
+    base_url = await get_blockscout_base_url(chain_id)
+
+    # Report progress after resolving Blockscout URL
+    await report_and_log_progress(
+        ctx, progress=1.0, total=2.0, message="Resolved Blockscout instance URL. Fetching transaction logs..."
     )
+
+    response_data = await make_blockscout_request(base_url=base_url, api_path=api_path, params=params)
+
+    original_items, was_truncated = _process_and_truncate_log_items(response_data.get("items", []))
 
     transformed_items = []
     for item in original_items:
@@ -426,7 +459,7 @@ async def get_transaction_logs(
 - `parameters`: Decoded event parameters with names, types, values, and indexing status
 
 **Transaction logs JSON:**
-"""
+"""  # noqa: E501
 
     output = f"{prefix}{logs_json_str}"
 
@@ -436,7 +469,7 @@ async def get_transaction_logs(
         pagination_hint = f"""
 
 ----
-To get the next page call get_transaction_logs(chain_id=\"{chain_id}\", transaction_hash=\"{transaction_hash}\", cursor=\"{next_cursor}\")"""
+To get the next page call get_transaction_logs(chain_id=\"{chain_id}\", transaction_hash=\"{transaction_hash}\", cursor=\"{next_cursor}\")"""  # noqa: E501
         output += pagination_hint
 
     # Add a note about truncated data if it happened
@@ -448,7 +481,7 @@ One or more log items in this response had a `data` field that was too large and
 If the full log data is crucial for your analysis, you can retrieve the complete, untruncated logs for this transaction programmatically. For example, using curl:
 `curl "{base_url}/api/v2/transactions/{transaction_hash}/logs"`
 You would then need to parse the JSON response and find the specific log by its index.
-"""
+"""  # noqa: E501
         output += note_on_truncation
 
     return output

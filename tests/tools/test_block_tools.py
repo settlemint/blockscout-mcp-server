@@ -1,10 +1,12 @@
 # tests/tools/test_block_tools.py
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-import httpx
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from blockscout_mcp_server.tools.block_tools import get_latest_block, get_block_info
+import httpx
+import pytest
+
+from blockscout_mcp_server.tools.block_tools import get_block_info, get_latest_block
+
 
 @pytest.mark.asyncio
 async def test_get_latest_block_success(mock_ctx):
@@ -16,18 +18,18 @@ async def test_get_latest_block_success(mock_ctx):
     mock_base_url = "https://eth.blockscout.com"
 
     # Mock API response is a list of blocks
-    mock_api_response = [
-        {"height": 12345, "timestamp": "2023-01-01T00:00:00Z"}
-    ]
-    expected_result = {
-        "block_number": 12345,
-        "timestamp": "2023-01-01T00:00:00Z"
-    }
+    mock_api_response = [{"height": 12345, "timestamp": "2023-01-01T00:00:00Z"}]
+    expected_result = {"block_number": 12345, "timestamp": "2023-01-01T00:00:00Z"}
 
     # Patch both helpers used by the tool
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         # Configure the mocks
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
@@ -42,6 +44,7 @@ async def test_get_latest_block_success(mock_ctx):
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
 
+
 @pytest.mark.asyncio
 async def test_get_latest_block_api_error(mock_ctx):
     """
@@ -54,9 +57,14 @@ async def test_get_latest_block_api_error(mock_ctx):
     # We'll simulate a 404 Not Found error from the API
     api_error = httpx.HTTPStatusError("Not Found", request=MagicMock(), response=MagicMock(status_code=404))
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         # Configure the mock to raise the error instead of returning a value
         mock_request.side_effect = api_error
@@ -70,6 +78,7 @@ async def test_get_latest_block_api_error(mock_ctx):
         mock_get_url.assert_called_once_with(chain_id)
         mock_request.assert_called_once_with(base_url=mock_base_url, api_path="/api/v2/main-page/blocks")
 
+
 @pytest.mark.asyncio
 async def test_get_latest_block_empty_response(mock_ctx):
     """
@@ -81,14 +90,16 @@ async def test_get_latest_block_empty_response(mock_ctx):
 
     # Empty response
     mock_api_response = []
-    expected_result = {
-        "block_number": None,
-        "timestamp": None
-    }
+    expected_result = {"block_number": None, "timestamp": None}
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
 
@@ -101,6 +112,7 @@ async def test_get_latest_block_empty_response(mock_ctx):
         assert result == expected_result
         assert mock_ctx.report_progress.call_count == 3
 
+
 @pytest.mark.asyncio
 async def test_get_latest_block_chain_not_found_error(mock_ctx):
     """
@@ -111,9 +123,12 @@ async def test_get_latest_block_chain_not_found_error(mock_ctx):
 
     # Import the custom exception
     from blockscout_mcp_server.tools.common import ChainNotFoundError
+
     chain_error = ChainNotFoundError(f"Chain with ID '{chain_id}' not found on Chainscout.")
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url:
+    with patch(
+        "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+    ) as mock_get_url:
         # Configure the mock to raise the chain error
         mock_get_url.side_effect = chain_error
 
@@ -126,6 +141,7 @@ async def test_get_latest_block_chain_not_found_error(mock_ctx):
         # Progress should have been reported once (at start) before the error
         assert mock_ctx.report_progress.call_count == 1
         assert mock_ctx.info.call_count == 1
+
 
 @pytest.mark.asyncio
 async def test_get_block_info_success(mock_ctx):
@@ -143,12 +159,17 @@ async def test_get_block_info_success(mock_ctx):
         "timestamp": "2023-01-01T00:00:00Z",
         "gas_used": "12345678",
         "gas_limit": "30000000",
-        "transaction_count": 150
+        "transaction_count": 150,
     }
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
 
@@ -163,6 +184,7 @@ async def test_get_block_info_success(mock_ctx):
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
 
+
 @pytest.mark.asyncio
 async def test_get_block_info_with_hash(mock_ctx):
     """
@@ -173,15 +195,16 @@ async def test_get_block_info_with_hash(mock_ctx):
     block_hash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     mock_base_url = "https://eth.blockscout.com"
 
-    mock_api_response = {
-        "hash": block_hash,
-        "height": 19000000,
-        "timestamp": "2023-01-01T00:00:00Z"
-    }
+    mock_api_response = {"hash": block_hash, "height": 19000000, "timestamp": "2023-01-01T00:00:00Z"}
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
 
@@ -196,6 +219,7 @@ async def test_get_block_info_with_hash(mock_ctx):
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
 
+
 @pytest.mark.asyncio
 async def test_get_block_info_api_error(mock_ctx):
     """
@@ -209,9 +233,14 @@ async def test_get_block_info_api_error(mock_ctx):
     # Simulate a 404 error for non-existent block
     api_error = httpx.HTTPStatusError("Not Found", request=MagicMock(), response=MagicMock(status_code=404))
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.side_effect = api_error
 
@@ -246,14 +275,21 @@ async def test_get_block_info_with_transactions_success(mock_ctx):
         else:
             return mock_block_response
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.side_effect = mock_request_side_effect
 
         # ACT
-        result = await get_block_info(chain_id=chain_id, number_or_hash=number_or_hash, include_transactions=True, ctx=mock_ctx)
+        result = await get_block_info(
+            chain_id=chain_id, number_or_hash=number_or_hash, include_transactions=True, ctx=mock_ctx
+        )
 
         # ASSERT
         assert mock_get_url.call_count == 1
@@ -287,14 +323,21 @@ async def test_get_block_info_with_no_transactions(mock_ctx):
         else:
             return mock_block_response
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.side_effect = mock_request_side_effect
 
         # ACT
-        result = await get_block_info(chain_id=chain_id, number_or_hash=number_or_hash, include_transactions=True, ctx=mock_ctx)
+        result = await get_block_info(
+            chain_id=chain_id, number_or_hash=number_or_hash, include_transactions=True, ctx=mock_ctx
+        )
 
         # ASSERT
         assert "Basic block info:" in result
@@ -322,14 +365,21 @@ async def test_get_block_info_with_transactions_api_error(mock_ctx):
         else:
             return mock_block_response
 
-    with patch('blockscout_mcp_server.tools.block_tools.get_blockscout_base_url', new_callable=AsyncMock) as mock_get_url, \
-         patch('blockscout_mcp_server.tools.block_tools.make_blockscout_request', new_callable=AsyncMock) as mock_request:
-
+    with (
+        patch(
+            "blockscout_mcp_server.tools.block_tools.get_blockscout_base_url", new_callable=AsyncMock
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.block_tools.make_blockscout_request", new_callable=AsyncMock
+        ) as mock_request,
+    ):
         mock_get_url.return_value = mock_base_url
         mock_request.side_effect = mock_request_side_effect
 
         # ACT
-        result = await get_block_info(chain_id=chain_id, number_or_hash=number_or_hash, include_transactions=True, ctx=mock_ctx)
+        result = await get_block_info(
+            chain_id=chain_id, number_or_hash=number_or_hash, include_transactions=True, ctx=mock_ctx
+        )
 
         # ASSERT
         assert "Basic block info:" in result

@@ -63,7 +63,7 @@ jobs:
 
   deploy_stage:
     name: Deploy stg instance
-    needs: push
+    needs: build-and-push
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions: write-all

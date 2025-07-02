@@ -38,8 +38,20 @@ async def test_nft_tokens_by_address_success(mock_ctx):
                 },
                 "amount": "3",
                 "token_instances": [
-                    {"id": "123", "metadata": {"name": "Punk #123", "attributes": []}},
-                    {"id": "456", "metadata": {"name": "Punk #456", "attributes": []}},
+                    {
+                        "id": "123",
+                        "metadata": {
+                            "name": "Punk #123",
+                            "attributes": [{"trait_type": "Color", "value": "Blue"}],
+                        },
+                    },
+                    {
+                        "id": "456",
+                        "metadata": {
+                            "name": "Punk #456",
+                            "attributes": {"trait_type": "Common", "value": "Gray"},
+                        },
+                    },
                 ],
             }
         ]
@@ -75,6 +87,14 @@ async def test_nft_tokens_by_address_success(mock_ctx):
         assert holding.collection.address == "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb"
         assert len(holding.token_instances) == 2
         assert holding.token_instances[0].name == "Punk #123"
+        # Test that list format metadata_attributes works
+        assert isinstance(holding.token_instances[0].metadata_attributes, list)
+        assert holding.token_instances[0].metadata_attributes[0]["trait_type"] == "Color"
+        assert holding.token_instances[0].metadata_attributes[0]["value"] == "Blue"
+        # Test that dict format metadata_attributes works
+        assert isinstance(holding.token_instances[1].metadata_attributes, dict)
+        assert holding.token_instances[1].metadata_attributes["trait_type"] == "Common"
+        assert holding.token_instances[1].metadata_attributes["value"] == "Gray"
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
 
@@ -132,9 +152,12 @@ async def test_nft_tokens_by_address_missing_fields(mock_ctx):
         "items": [
             {
                 "token": {
-                    "name": "Incomplete NFT",
+                    "name": None,  # Explicit None to test the fix
+                    "symbol": None,  # Explicit None to test the fix
                     "address_hash": "0xincomplete123",
-                    # Missing symbol, type, holders_count, total_supply
+                    "type": "ERC-721",
+                    "holders_count": 0,
+                    "total_supply": 0,
                 },
                 "token_instances": [
                     {
@@ -174,6 +197,9 @@ async def test_nft_tokens_by_address_missing_fields(mock_ctx):
         assert isinstance(result, ToolResponse)
         assert len(result.data) == 2
         assert result.data[0].collection.address == "0xincomplete123"
+        # Test that None values are handled properly
+        assert result.data[0].collection.name is None
+        assert result.data[0].collection.symbol is None
         assert result.data[0].token_instances[0].id == "999"
         assert result.data[1].collection.address == "0xempty456"
         assert result.data[1].token_instances == []

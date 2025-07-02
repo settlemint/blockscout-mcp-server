@@ -206,8 +206,9 @@ class NftTokenInstance(BaseModel):
         None,
         description="A URL to an external site or application related to the NFT.",  # noqa: E501
     )
-    metadata_attributes: list | None = Field(
-        None, description="A list of metadata attributes (traits) associated with the NFT."
+    metadata_attributes: list | dict | None = Field(
+        None,
+        description="The metadata attributes (traits) associated with the NFT.",
     )
 
 
@@ -217,8 +218,8 @@ class NftCollectionInfo(BaseModel):
 
     type: str = Field(description="The token standard of the collection.")
     address: str = Field(description="The smart contract address of the NFT collection.")
-    name: str = Field(description="The name of the collection.")
-    symbol: str = Field(description="The symbol of the collection.")
+    name: str | None = Field(None, description="The name of the collection.")
+    symbol: str | None = Field(None, description="The symbol of the collection.")
     holders_count: int = Field(description="The number of unique addresses that hold a token from this collection.")
     total_supply: int = Field(description="The total number of tokens in the collection.")
 

@@ -1,11 +1,16 @@
 # tests/tools/test_transaction_tools_2.py
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from blockscout_mcp_server.constants import INPUT_DATA_TRUNCATION_LIMIT
+from blockscout_mcp_server.models import (
+    TokenTransfer,
+    ToolResponse,
+    TransactionInfoData,
+    TransactionLogItem,
+)
 from blockscout_mcp_server.tools.transaction_tools import get_transaction_info, get_transaction_logs
 
 
@@ -67,7 +72,11 @@ async def test_get_transaction_info_success(mock_ctx):
         # ASSERT
         mock_get_url.assert_called_once_with(chain_id)
         mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{hash}")
-        assert result == expected_transformed_result
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionInfoData)
+        data = result.data.model_dump(by_alias=True)
+        for key, value in expected_transformed_result.items():
+            assert data[key] == value
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
 
@@ -78,7 +87,15 @@ async def test_get_transaction_info_no_truncation(mock_ctx):
     chain_id = "1"
     tx_hash = "0x123"
     mock_base_url = "https://eth.blockscout.com"
-    mock_api_response = {"hash": tx_hash, "decoded_input": {"parameters": ["short_string"]}, "raw_input": "0xshort"}
+    mock_api_response = {
+        "hash": tx_hash,
+        "decoded_input": {
+            "method_call": "test()",
+            "method_id": "0xabc",
+            "parameters": ["short_string"],
+        },
+        "raw_input": "0xshort",
+    }
 
     with (
         patch(
@@ -93,10 +110,11 @@ async def test_get_transaction_info_no_truncation(mock_ctx):
 
         result = await get_transaction_info(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
 
-        assert isinstance(result, dict)
-        assert "raw_input" not in result
-        assert "raw_input_truncated" not in result
-        assert result["decoded_input"]["parameters"][0] == "short_string"
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionInfoData)
+        assert result.data.raw_input is None
+        assert result.data.raw_input_truncated is None
+        assert result.data.decoded_input.parameters[0] == "short_string"
 
 
 @pytest.mark.asyncio
@@ -121,14 +139,11 @@ async def test_get_transaction_info_truncates_raw_input(mock_ctx):
 
         result = await get_transaction_info(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
 
-        assert isinstance(result, str)
-        assert "**Note on Truncated Data:**" in result
-
-        json_part = result.split("----")[0]
-        data = json.loads(json_part)
-
-        assert data["raw_input_truncated"] is True
-        assert len(data["raw_input"]) == INPUT_DATA_TRUNCATION_LIMIT
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionInfoData)
+        assert result.notes is not None
+        assert result.data.raw_input_truncated is True
+        assert len(result.data.raw_input) == INPUT_DATA_TRUNCATION_LIMIT
 
 
 @pytest.mark.asyncio
@@ -138,7 +153,15 @@ async def test_get_transaction_info_truncates_decoded_input(mock_ctx):
     tx_hash = "0x123"
     mock_base_url = "https://eth.blockscout.com"
     long_param = "0x" + "a" * INPUT_DATA_TRUNCATION_LIMIT
-    mock_api_response = {"hash": tx_hash, "decoded_input": {"parameters": [long_param]}, "raw_input": "0xshort"}
+    mock_api_response = {
+        "hash": tx_hash,
+        "decoded_input": {
+            "method_call": "test()",
+            "method_id": "0xabc",
+            "parameters": [long_param],
+        },
+        "raw_input": "0xshort",
+    }
 
     with (
         patch(
@@ -153,13 +176,10 @@ async def test_get_transaction_info_truncates_decoded_input(mock_ctx):
 
         result = await get_transaction_info(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
 
-        assert isinstance(result, str)
-        assert "**Note on Truncated Data:**" in result
-
-        json_part = result.split("----")[0]
-        data = json.loads(json_part)
-
-        param = data["decoded_input"]["parameters"][0]
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionInfoData)
+        assert result.notes is not None
+        param = result.data.decoded_input.parameters[0]
         assert param["value_truncated"] is True
         assert len(param["value_sample"]) == INPUT_DATA_TRUNCATION_LIMIT
 
@@ -171,7 +191,15 @@ async def test_get_transaction_info_keeps_and_truncates_raw_input_when_flagged(m
     tx_hash = "0x123"
     mock_base_url = "https://eth.blockscout.com"
     long_raw_input = "0x" + "a" * INPUT_DATA_TRUNCATION_LIMIT
-    mock_api_response = {"hash": tx_hash, "decoded_input": {"parameters": ["short"]}, "raw_input": long_raw_input}
+    mock_api_response = {
+        "hash": tx_hash,
+        "decoded_input": {
+            "method_call": "test()",
+            "method_id": "0xabc",
+            "parameters": ["short"],
+        },
+        "raw_input": long_raw_input,
+    }
 
     with (
         patch(
@@ -188,15 +216,12 @@ async def test_get_transaction_info_keeps_and_truncates_raw_input_when_flagged(m
             chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx, include_raw_input=True
         )
 
-        assert isinstance(result, str)
-        assert "**Note on Truncated Data:**" in result
-
-        json_part = result.split("----")[0]
-        data = json.loads(json_part)
-
-        assert "raw_input" in data
-        assert data["raw_input_truncated"] is True
-        assert len(data["raw_input"]) == INPUT_DATA_TRUNCATION_LIMIT
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionInfoData)
+        assert result.notes is not None
+        assert result.data.raw_input is not None
+        assert result.data.raw_input_truncated is True
+        assert len(result.data.raw_input) == INPUT_DATA_TRUNCATION_LIMIT
 
 
 @pytest.mark.asyncio
@@ -288,8 +313,12 @@ async def test_get_transaction_info_minimal_response(mock_ctx):
         # ASSERT
         mock_get_url.assert_called_once_with(chain_id)
         mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{hash}")
-        expected_result = {"status": "pending"}
-        assert result == expected_result
+        expected_result = {"status": "pending", "token_transfers": []}
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionInfoData)
+        data = result.data.model_dump(by_alias=True)
+        for key, value in expected_result.items():
+            assert data[key] == value
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3
 
@@ -324,21 +353,6 @@ async def test_get_transaction_info_with_token_transfers_transformation(mock_ctx
         ],
     }
 
-    expected_transformed_result = {
-        "from": "0xe725...",
-        "to": "0x3328...",
-        "token_transfers": [
-            {
-                "from": "0x000...",
-                "to": "0x3328...",
-                "token": {"name": "WETH", "symbol": "WETH"},
-                "total": {"value": "2046..."},
-                "type": "token_minting",
-                "log_index": 13,
-            }
-        ],
-    }
-
     with (
         patch(
             "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
@@ -354,7 +368,12 @@ async def test_get_transaction_info_with_token_transfers_transformation(mock_ctx
         result = await get_transaction_info(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
 
         # ASSERT
-        assert result == expected_transformed_result
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionInfoData)
+        assert result.data.from_address == "0xe725..."
+        assert result.data.to_address == "0x3328..."
+        assert isinstance(result.data.token_transfers[0], TokenTransfer)
+        assert result.data.token_transfers[0].transfer_type == "token_minting"
 
 
 @pytest.mark.asyncio
@@ -394,57 +413,59 @@ async def test_get_transaction_logs_success(mock_ctx):
         ],
     }
 
-    expected_transformed_response = {
-        "items": [
-            {
-                "address": "0xcontract1...",
-                "block_number": 19000000,
-                "data": "0xdata123...",
-                "decoded": {"name": "EventA"},
-                "index": 0,
-                "topics": ["0xtopic1...", "0xtopic2..."],
-            },
-            {
-                "address": "0xcontract2...",
-                "block_number": 19000000,
-                "data": "0xdata456...",
-                "decoded": {"name": "EventB"},
-                "index": 1,
-                "topics": ["0xtopic3..."],
-            },
-        ],
-    }
+    expected_log_items = [
+        TransactionLogItem(
+            address="0xcontract1...",
+            block_number=19000000,
+            data="0xdata123...",
+            decoded={"name": "EventA"},
+            index=0,
+            topics=["0xtopic1...", "0xtopic2..."],
+        ),
+        TransactionLogItem(
+            address="0xcontract2...",
+            block_number=19000000,
+            data="0xdata456...",
+            decoded={"name": "EventB"},
+            index=1,
+            topics=["0xtopic3..."],
+        ),
+    ]
 
     # Patch json.dumps in the transaction_tools module
     with (
         patch(
-            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url", new_callable=AsyncMock
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url",
+            new_callable=AsyncMock,
         ) as mock_get_url,
         patch(
-            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request", new_callable=AsyncMock
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request",
+            new_callable=AsyncMock,
         ) as mock_request,
-        patch("blockscout_mcp_server.tools.transaction_tools.json.dumps") as mock_json_dumps,
     ):
         mock_get_url.return_value = mock_base_url
         mock_request.return_value = mock_api_response
-        # We don't care what json.dumps returns, only that it's called correctly
-        mock_json_dumps.return_value = "{...}"
 
         # ACT
         result = await get_transaction_logs(chain_id=chain_id, transaction_hash=hash, ctx=mock_ctx)
 
         # ASSERT
-        # Assert that json.dumps was called with the transformed data
-        mock_json_dumps.assert_called_once_with(expected_transformed_response)
-
         mock_get_url.assert_called_once_with(chain_id)
         mock_request.assert_called_once_with(
             base_url=mock_base_url, api_path=f"/api/v2/transactions/{hash}/logs", params={}
         )
 
-        # Verify the result starts with the expected prefix
-        expected_prefix = "**Items Structure:**"
-        assert result.startswith(expected_prefix)
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data[0], TransactionLogItem)
+        for actual, expected in zip(result.data, expected_log_items):
+            assert actual.address == expected.address
+            assert actual.block_number == expected.block_number
+            assert actual.data == expected.data
+            assert actual.decoded == expected.decoded
+            assert actual.index == expected.index
+            assert actual.topics == expected.topics
+        assert "transaction_hash" not in result.data[0].model_dump()
+        assert result.pagination is None
 
         assert mock_ctx.report_progress.call_count == 3
         assert mock_ctx.info.call_count == 3

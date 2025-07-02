@@ -4,6 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from blockscout_mcp_server.models import (
+    AdvancedFilterItem,
+    ToolResponse,
+    TransactionSummaryData,
+)
 from blockscout_mcp_server.tools.transaction_tools import (
     get_token_transfers_by_address,
     get_transactions_by_address,
@@ -44,7 +49,9 @@ async def test_get_transactions_by_address_calls_wrapper_correctly(mock_ctx):
         )
 
         # ASSERT
-        assert result == mock_api_response
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, list)
+        assert result.data == []
         mock_get_url.assert_called_once_with(chain_id)
 
         # Assert that the wrapper was called once
@@ -113,7 +120,11 @@ async def test_get_transactions_by_address_minimal_params(mock_ctx):
         result = await get_transactions_by_address(chain_id=chain_id, address=address, ctx=mock_ctx)
 
         # ASSERT
-        assert result == mock_api_response
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, list)
+        assert len(result.data) == 1
+        assert isinstance(result.data[0], AdvancedFilterItem)
+        assert result.data[0].model_dump(by_alias=True)["hash"] == "0xabc123"
         mock_get_url.assert_called_once_with(chain_id)
         mock_wrapper.assert_called_once()
 
@@ -149,16 +160,13 @@ async def test_get_transactions_by_address_transforms_response(mock_ctx):
         "next_page_params": None,
     }
 
-    expected_transformed_response = {
-        "items": [
-            {
-                "from": "0xfrom_hash",
-                "to": "0xto_hash",
-                "value": "kept",
-            }
-        ],
-        "next_page_params": None,
-    }
+    expected_items = [
+        {
+            "from": "0xfrom_hash",
+            "to": "0xto_hash",
+            "value": "kept",
+        }
+    ]
 
     with (
         patch(
@@ -173,7 +181,15 @@ async def test_get_transactions_by_address_transforms_response(mock_ctx):
 
         result = await get_transactions_by_address(chain_id=chain_id, address=address, ctx=mock_ctx)
 
-        assert result == expected_transformed_response
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, list)
+        assert len(result.data) == 1
+        item_model = result.data[0]
+        assert isinstance(item_model, AdvancedFilterItem)
+        assert item_model.from_address == expected_items[0]["from"]
+        assert item_model.to_address == expected_items[0]["to"]
+        item_dict = item_model.model_dump(by_alias=True)
+        assert item_dict["value"] == expected_items[0]["value"]
 
 
 @pytest.mark.asyncio
@@ -207,7 +223,9 @@ async def test_get_token_transfers_by_address_calls_wrapper_correctly(mock_ctx):
         )
 
         # ASSERT
-        assert result == mock_api_response
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, list)
+        assert result.data == []
         mock_get_url.assert_called_once_with(chain_id)
         mock_wrapper.assert_called_once()
 
@@ -303,17 +321,14 @@ async def test_get_token_transfers_by_address_transforms_response(mock_ctx):
         "next_page_params": None,
     }
 
-    expected_transformed_response = {
-        "items": [
-            {
-                "from": "0xfrom_hash",
-                "to": "0xto_hash",
-                "token": "kept",
-                "total": "kept",
-            }
-        ],
-        "next_page_params": None,
-    }
+    expected_items = [
+        {
+            "from": "0xfrom_hash",
+            "to": "0xto_hash",
+            "token": "kept",
+            "total": "kept",
+        }
+    ]
 
     with (
         patch(
@@ -328,7 +343,16 @@ async def test_get_token_transfers_by_address_transforms_response(mock_ctx):
 
         result = await get_token_transfers_by_address(chain_id=chain_id, address=address, ctx=mock_ctx)
 
-        assert result == expected_transformed_response
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, list)
+        assert len(result.data) == 1
+        item_model = result.data[0]
+        assert isinstance(item_model, AdvancedFilterItem)
+        assert item_model.from_address == expected_items[0]["from"]
+        assert item_model.to_address == expected_items[0]["to"]
+        item_dict = item_model.model_dump(by_alias=True)
+        assert item_dict["token"] == expected_items[0]["token"]
+        assert item_dict["total"] == expected_items[0]["total"]
 
 
 @pytest.mark.asyncio
@@ -383,10 +407,8 @@ async def test_transaction_summary_without_wrapper(mock_ctx):
     tx_hash = "0x123abc"
     mock_base_url = "https://eth.blockscout.com"
 
-    mock_api_response = {"data": {"summaries": "This is a test transaction summary."}}
-    expected_result = (
-        "# Transaction Summary from Blockscout Transaction Interpreter\nThis is a test transaction summary."
-    )
+    summary_obj = {"template": "This is a test transaction summary.", "vars": {}}
+    mock_api_response = {"data": {"summaries": [summary_obj]}}
 
     with (
         patch(
@@ -403,7 +425,9 @@ async def test_transaction_summary_without_wrapper(mock_ctx):
         result = await transaction_summary(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
 
         # ASSERT
-        assert result == expected_result
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionSummaryData)
+        assert result.data.summary == [summary_obj]
         mock_get_url.assert_called_once_with(chain_id)
         mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{tx_hash}/summary")
 
@@ -424,7 +448,6 @@ async def test_transaction_summary_no_summary_available(mock_ctx):
 
     # Response with no summary data
     mock_api_response = {"data": {}}
-    expected_result = "No summary available."
 
     with (
         patch(
@@ -441,7 +464,82 @@ async def test_transaction_summary_no_summary_available(mock_ctx):
         result = await transaction_summary(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
 
         # ASSERT
-        assert result == expected_result
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionSummaryData)
+        assert result.data.summary is None
+        mock_get_url.assert_called_once_with(chain_id)
+        mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{tx_hash}/summary")
+        assert mock_ctx.report_progress.call_count == 3
+        assert mock_ctx.info.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_transaction_summary_handles_non_string_summary(mock_ctx):
+    """Verify transaction_summary correctly handles a non-string summary."""
+    # ARRANGE
+    chain_id = "1"
+    tx_hash = "0xcomplex"
+    mock_base_url = "https://eth.blockscout.com"
+
+    complex_summary = [
+        {"template": "Summary 1", "vars": {"a": 1}},
+        {"template": "Summary 2", "vars": {"b": 2}},
+    ]
+    mock_api_response = {"data": {"summaries": complex_summary}}
+
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url",
+            new_callable=AsyncMock,
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request",
+            new_callable=AsyncMock,
+        ) as mock_request,
+    ):
+        mock_get_url.return_value = mock_base_url
+        mock_request.return_value = mock_api_response
+
+        # ACT
+        result = await transaction_summary(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
+
+        # ASSERT
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionSummaryData)
+        assert result.data.summary == complex_summary  # Assert it's the original list
+        mock_get_url.assert_called_once_with(chain_id)
+        mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{tx_hash}/summary")
+        assert mock_ctx.report_progress.call_count == 3
+        assert mock_ctx.info.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_transaction_summary_handles_empty_list(mock_ctx):
+    """Return an empty list when Blockscout summarizes to nothing."""
+    chain_id = "1"
+    tx_hash = "0xempty"
+    mock_base_url = "https://eth.blockscout.com"
+
+    mock_api_response = {"data": {"summaries": []}}
+
+    with (
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.get_blockscout_base_url",
+            new_callable=AsyncMock,
+        ) as mock_get_url,
+        patch(
+            "blockscout_mcp_server.tools.transaction_tools.make_blockscout_request",
+            new_callable=AsyncMock,
+        ) as mock_request,
+    ):
+        mock_get_url.return_value = mock_base_url
+        mock_request.return_value = mock_api_response
+
+        result = await transaction_summary(chain_id=chain_id, transaction_hash=tx_hash, ctx=mock_ctx)
+
+        assert isinstance(result, ToolResponse)
+        assert isinstance(result.data, TransactionSummaryData)
+        assert result.data.summary == []
         mock_get_url.assert_called_once_with(chain_id)
         mock_request.assert_called_once_with(base_url=mock_base_url, api_path=f"/api/v2/transactions/{tx_hash}/summary")
         assert mock_ctx.report_progress.call_count == 3

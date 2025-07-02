@@ -1,4 +1,3 @@
-import json
 from typing import Annotated
 
 from mcp.server.fastmcp import Context
@@ -6,10 +5,20 @@ from pydantic import Field
 
 from blockscout_mcp_server.config import config
 from blockscout_mcp_server.constants import INPUT_DATA_TRUNCATION_LIMIT
+from blockscout_mcp_server.models import (
+    AdvancedFilterItem,
+    NextCallInfo,
+    PaginationInfo,
+    ToolResponse,
+    TransactionInfoData,
+    TransactionLogItem,
+    TransactionSummaryData,
+)
 from blockscout_mcp_server.tools.common import (
     InvalidCursorError,
     _process_and_truncate_log_items,
     _recursively_truncate_and_flag_long_strings,
+    build_tool_response,
     decode_cursor,
     encode_cursor,
     get_blockscout_base_url,
@@ -88,19 +97,23 @@ def _transform_transaction_info(data: dict) -> dict:
     if "token_transfers" in transformed_data and isinstance(transformed_data["token_transfers"], list):
         optimized_transfers = []
         for transfer in transformed_data["token_transfers"]:
-            if isinstance(transfer.get("from"), dict):
-                transfer["from"] = transfer["from"].get("hash")
-            if isinstance(transfer.get("to"), dict):
-                transfer["to"] = transfer["to"].get("hash")
+            # Copy the nested dictionary to avoid mutating the original response data
+            new_transfer = transfer.copy()
+            if isinstance(new_transfer.get("from"), dict):
+                new_transfer["from"] = new_transfer["from"].get("hash")
+            if isinstance(new_transfer.get("to"), dict):
+                new_transfer["to"] = new_transfer["to"].get("hash")
 
-            transfer.pop("block_hash", None)
-            transfer.pop("block_number", None)
-            transfer.pop("transaction_hash", None)
-            transfer.pop("timestamp", None)
+            new_transfer.pop("block_hash", None)
+            new_transfer.pop("block_number", None)
+            new_transfer.pop("transaction_hash", None)
+            new_transfer.pop("timestamp", None)
 
-            optimized_transfers.append(transfer)
+            optimized_transfers.append(new_transfer)
 
         transformed_data["token_transfers"] = optimized_transfers
+    else:
+        transformed_data["token_transfers"] = []
 
     return transformed_data
 
@@ -114,7 +127,7 @@ async def get_transactions_by_address(
     methods: Annotated[
         str | None, Field(description="A method signature to filter transactions by (e.g 0x304e6ade)")
     ] = None,
-) -> dict:
+) -> ToolResponse[list[AdvancedFilterItem]]:
     """
     Get transactions for an address within a specific time range.
     Use cases:
@@ -182,8 +195,12 @@ async def get_transactions_by_address(
 
     transformed_items = [_transform_advanced_filter_item(item, fields_to_remove) for item in original_items]
 
-    response_data["items"] = transformed_items
-    return response_data
+    # All the fields returned by the API except the ones in `fields_to_remove` are added to the response
+    result_data = [AdvancedFilterItem.model_validate(item) for item in transformed_items]
+
+    # The pagination information is not extracted from the API response as it is assumed that
+    # the LLM will use the `age_from` and `age_to` parameters to paginate through the results.
+    return build_tool_response(data=result_data)
 
 
 async def get_token_transfers_by_address(
@@ -208,7 +225,7 @@ async def get_token_transfers_by_address(
             description="An ERC-20 token contract address to filter transfers by a specific token. If omitted, returns transfers of all tokens."  # noqa: E501
         ),
     ] = None,
-) -> dict:
+) -> ToolResponse[list[AdvancedFilterItem]]:
     """
     Get ERC-20 token transfers for an address within a specific time range.
     Use cases:
@@ -276,15 +293,19 @@ async def get_token_transfers_by_address(
 
     transformed_items = [_transform_advanced_filter_item(item, fields_to_remove) for item in original_items]
 
-    response_data["items"] = transformed_items
-    return response_data
+    # All the fields returned by the API except the ones in `fields_to_remove` are added to the response
+    result_data = [AdvancedFilterItem.model_validate(item) for item in transformed_items]
+
+    # The pagination information is not extracted from the API response as it is assumed that
+    # the LLM will use the `age_from` and `age_to` parameters to paginate through the results.
+    return build_tool_response(data=result_data)
 
 
 async def transaction_summary(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     transaction_hash: Annotated[str, Field(description="Transaction hash")],
     ctx: Context,
-) -> str:
+) -> ToolResponse[TransactionSummaryData]:
     """
     Get human-readable transaction summaries from Blockscout Transaction Interpreter.
     Automatically classifies transactions into natural language descriptions (transfers, swaps, NFT sales, DeFi operations)
@@ -313,11 +334,16 @@ async def transaction_summary(
     # Report completion
     await report_and_log_progress(ctx, progress=2.0, total=2.0, message="Successfully fetched transaction summary.")
 
+    # Only the summary is extracted from the API response since only this field contains
+    # information that could be handled by the LLM without additional interpretation instructions
     summary = response_data.get("data", {}).get("summaries")
-    if summary:
-        return f"# Transaction Summary from Blockscout Transaction Interpreter\n{summary}"
-    else:
-        return "No summary available."
+
+    if summary is not None and not isinstance(summary, list):
+        raise RuntimeError("Blockscout API returned an unexpected format for transaction summary")
+
+    summary_data = TransactionSummaryData(summary=summary)
+
+    return build_tool_response(data=summary_data)
 
 
 async def get_transaction_info(
@@ -327,7 +353,7 @@ async def get_transaction_info(
     include_raw_input: Annotated[
         bool | None, Field(description="If true, includes the raw transaction input data.")
     ] = False,
-) -> dict | str:
+) -> ToolResponse[TransactionInfoData]:
     """
     Get comprehensive transaction information.
     Unlike standard eth_getTransactionByHash, this tool returns enriched data including decoded input parameters, detailed token transfers with token metadata, transaction fee breakdown (priority fees, burnt fees) and categorized transaction types.
@@ -359,23 +385,28 @@ async def get_transaction_info(
     # Process data for truncation
     processed_data, was_truncated = _process_and_truncate_tx_info_data(response_data, include_raw_input)
 
-    # Apply standard transformations
-    final_data = _transform_transaction_info(processed_data)
+    # Apply transformations to the data to preserve the LLM context:
+    # 1. Remove redundant top-level hash
+    # 2. Simplify top-level 'from' and 'to' objects
+    # 3. Optimize the 'token_transfers' list to remove fields duplicated in the top-level objects
+    final_data_dict = _transform_transaction_info(processed_data)
 
-    if not was_truncated:
-        return final_data
+    transaction_data = TransactionInfoData(**final_data_dict)
 
-    # If truncated, return a string with the JSON and the instructional note
-    output_json = json.dumps(final_data)
-    note = f"""
-----
-**Note on Truncated Data:**
-One or more large data fields in this response have been truncated (indicated by "value_truncated": true or "raw_input_truncated": true).
+    notes = None
+    if was_truncated:
+        notes = [
+            (
+                "One or more large data fields in this response have been truncated "
+                '(indicated by "value_truncated": true or "raw_input_truncated": true).'
+            ),
+            (
+                f"To get the full, untruncated data, you can retrieve it programmatically. "
+                f'For example, using curl:\n`curl "{str(base_url).rstrip("/")}/api/v2/transactions/{transaction_hash}"`'
+            ),
+        ]
 
-To get the full, untruncated data, you can retrieve it programmatically. For example, using curl:
-`curl "{str(base_url).rstrip("/")}/api/v2/transactions/{transaction_hash}"`
-"""  # noqa: E501
-    return f"{output_json}{note}"
+    return build_tool_response(data=transaction_data, notes=notes)
 
 
 async def get_transaction_logs(
@@ -386,7 +417,7 @@ async def get_transaction_logs(
         str | None,
         Field(description="The pagination cursor from a previous response to get the next page of results."),
     ] = None,
-) -> str:
+) -> ToolResponse[list[TransactionLogItem]]:
     """
     Get comprehensive transaction logs.
     Unlike standard eth_getLogs, this tool returns enriched logs, primarily focusing on decoded event parameters with their types and values (if event decoding is applicable).
@@ -400,7 +431,9 @@ async def get_transaction_logs(
             decoded_params = decode_cursor(cursor)
             params.update(decoded_params)
         except InvalidCursorError:
-            return "Error: Invalid or expired pagination cursor. Please make a new request without the cursor to start over."  # noqa: E501
+            raise ValueError(
+                "Invalid or expired pagination cursor. Please make a new request without the cursor to start over."
+            )
 
     # Report start of operation
     await report_and_log_progress(
@@ -421,67 +454,80 @@ async def get_transaction_logs(
 
     original_items, was_truncated = _process_and_truncate_log_items(response_data.get("items", []))
 
-    transformed_items = []
+    # To preserve the LLM context, only specific fields are added to the response
+    log_items: list[TransactionLogItem] = []
     for item in original_items:
-        new_item = {
-            "address": item.get("address", {}).get("hash"),
+        curated_item = {
+            "address": item.get("address", {}).get("hash")
+            if isinstance(item.get("address"), dict)
+            else item.get("address"),
             "block_number": item.get("block_number"),
+            "topics": item.get("topics"),
             "data": item.get("data"),
             "decoded": item.get("decoded"),
             "index": item.get("index"),
-            "topics": item.get("topics"),
         }
         if item.get("data_truncated"):
-            new_item["data_truncated"] = True
-        transformed_items.append(new_item)
+            curated_item["data_truncated"] = True
 
-    transformed_response = {
-        "items": transformed_items,
-    }
+        log_items.append(TransactionLogItem(**curated_item))
 
-    # Report completion
-    await report_and_log_progress(ctx, progress=2.0, total=2.0, message="Successfully fetched transaction logs.")
+    data_description = [
+        "Items Structure:",
+        "- `address`: The contract address that emitted the log (string)",
+        "- `block_number`: Block where the event was emitted",
+        "- `index`: Log position within the block",
+        "- `topics`: Raw indexed event parameters (first topic is event signature hash)",
+        "- `data`: Raw non-indexed event parameters (hex encoded). **May be truncated.**",
+        "- `decoded`: If available, the decoded event with its name and parameters",
+        "- `data_truncated`: (Optional) `true` if the `data` or `decoded` field was shortened.",
+        "Event Decoding in `decoded` field:",
+        (
+            "- `method_call`: **Actually the event signature** "
+            '(e.g., "Transfer(address indexed from, address indexed to, uint256 value)")'
+        ),
+        "- `method_id`: **Actually the event signature hash** (first 4 bytes of keccak256 hash)",
+        "- `parameters`: Decoded event parameters with names, types, values, and indexing status",
+    ]
 
-    logs_json_str = json.dumps(transformed_response)  # Compact JSON
+    notes = None
+    if was_truncated:
+        notes = [
+            (
+                "One or more log items in this response had a `data` field that was "
+                'too large and has been truncated (indicated by `"data_truncated": true`).'
+            ),
+            (
+                "If the full log data is crucial for your analysis, you can retrieve the complete, "
+                "untruncated logs for this transaction programmatically. For example, using curl:"
+            ),
+            f'`curl "{base_url}/api/v2/transactions/{transaction_hash}/logs"`',
+            "You would then need to parse the JSON response and find the specific log by its index.",
+        ]
 
-    prefix = """**Items Structure:**
-- `address`: The contract address that emitted the log (string)
-- `block_number`: Block where the event was emitted
-- `index`: Log position within the block
-- `topics`: Raw indexed event parameters (first topic is event signature hash)
-- `data`: Raw non-indexed event parameters (hex encoded). **May be truncated.**
-- `decoded`: If available, the decoded event with its name and parameters
-- `data_truncated`: (Optional) `true` if the `data` field was shortened.
-
-**Event Decoding in `decoded` field:**
-- `method_call`: **Actually the event signature** (e.g., "Transfer(address indexed from, address indexed to, uint256 value)")
-- `method_id`: **Actually the event signature hash** (first 4 bytes of keccak256 hash)
-- `parameters`: Decoded event parameters with names, types, values, and indexing status
-
-**Transaction logs JSON:**
-"""  # noqa: E501
-
-    output = f"{prefix}{logs_json_str}"
-
+    # Since there could be more than one page of logs for the same transaction,
+    # the pagination information is extracted from API response and added explicitly
+    # to the tool response
+    pagination = None
     next_page_params = response_data.get("next_page_params")
     if next_page_params:
         next_cursor = encode_cursor(next_page_params)
-        pagination_hint = f"""
+        pagination = PaginationInfo(
+            next_call=NextCallInfo(
+                tool_name="get_transaction_logs",
+                params={
+                    "chain_id": chain_id,
+                    "transaction_hash": transaction_hash,
+                    "cursor": next_cursor,
+                },
+            )
+        )
 
-----
-To get the next page call get_transaction_logs(chain_id=\"{chain_id}\", transaction_hash=\"{transaction_hash}\", cursor=\"{next_cursor}\")"""  # noqa: E501
-        output += pagination_hint
+    await report_and_log_progress(ctx, progress=2.0, total=2.0, message="Successfully fetched transaction logs.")
 
-    # Add a note about truncated data if it happened
-    if was_truncated:
-        note_on_truncation = f"""
-----
-**Note on Truncated Data:**
-One or more log items in this response had a `data` field that was too large and has been truncated (indicated by `"data_truncated": true`).
-If the full log data is crucial for your analysis, you can retrieve the complete, untruncated logs for this transaction programmatically. For example, using curl:
-`curl "{base_url}/api/v2/transactions/{transaction_hash}/logs"`
-You would then need to parse the JSON response and find the specific log by its index.
-"""  # noqa: E501
-        output += note_on_truncation
-
-    return output
+    return build_tool_response(
+        data=log_items,
+        data_description=data_description,
+        notes=notes,
+        pagination=pagination,
+    )

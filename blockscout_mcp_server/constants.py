@@ -15,6 +15,18 @@ GENERAL_RULES = [
         "`get_chains_list` to get chain IDs of all known chains."
     ),
     'If no chain is specified in the user\'s prompt, assume "Ethereum Mainnet" (chain_id: 1) as the default.',
+    (
+        "PAGINATION HANDLING: When any tool response includes a 'pagination' field, "
+        "this means there are additional pages of data available. "
+        "You MUST use the exact tool call provided in 'pagination.next_call' to fetch the next page. "
+        "The 'pagination.next_call' contains the complete tool name and all required parameters "
+        "(including the cursor) for the next page request."
+    ),
+    (
+        "If the user asks for comprehensive data or 'all' results, "
+        "and you receive a paginated response, continue calling the pagination tool calls "
+        "until you have gathered all available data or reached a reasonable limit."
+    ),
 ]
 
 RECOMMENDED_CHAINS = [
@@ -33,9 +45,9 @@ RECOMMENDED_CHAINS = [
 SERVER_NAME = "blockscout-mcp-server"
 
 # The maximum length for a log's `data` field before it's truncated.
-# 1026 = '0x' prefix + 1024 hex characters (512 bytes).
-LOG_DATA_TRUNCATION_LIMIT = 1026
+# 514 = '0x' prefix + 512 hex characters (256 bytes).
+LOG_DATA_TRUNCATION_LIMIT = 514
 
 # The maximum length for a transaction's input data field before it's truncated.
-# 1026 = '0x' prefix + 1024 hex characters (512 bytes).
-INPUT_DATA_TRUNCATION_LIMIT = 1026
+# 514 = '0x' prefix + 512 hex characters (256 bytes).
+INPUT_DATA_TRUNCATION_LIMIT = 514

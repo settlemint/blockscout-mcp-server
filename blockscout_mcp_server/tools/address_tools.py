@@ -4,6 +4,7 @@ from typing import Annotated
 from mcp.server.fastmcp import Context
 from pydantic import Field
 
+from blockscout_mcp_server.config import config
 from blockscout_mcp_server.models import (
     AddressInfoData,
     AddressLogItem,
@@ -19,7 +20,9 @@ from blockscout_mcp_server.tools.common import (
     _process_and_truncate_log_items,
     apply_cursor_to_params,
     build_tool_response,
+    create_items_pagination,
     encode_cursor,
+    extract_log_cursor_params,
     get_blockscout_base_url,
     make_blockscout_request,
     make_metadata_request,
@@ -164,6 +167,21 @@ async def get_tokens_by_address(
     return build_tool_response(data=token_holdings, pagination=pagination)
 
 
+def extract_nft_cursor_params(item: dict) -> dict:
+    """Extract cursor parameters from an NFT collection item for pagination continuation.
+
+    This function determines which fields from the last item should be used
+    as cursor parameters for the next page request. The returned dictionary
+    will be encoded as an opaque cursor string.
+    """
+    token_info = item.get("token", {})
+    return {
+        "token_contract_address_hash": token_info.get("address_hash"),
+        "token_type": token_info.get("type"),
+        "items_count": 50,
+    }
+
+
 async def nft_tokens_by_address(
     chain_id: Annotated[str, Field(description="The ID of the blockchain")],
     address: Annotated[str, Field(description="NFT owner address")],
@@ -199,58 +217,71 @@ async def nft_tokens_by_address(
 
     await report_and_log_progress(ctx, progress=2.0, total=2.0, message="Successfully fetched NFT data.")
 
-    items_data = response_data.get("items", [])
-    nft_holdings: list[NftCollectionHolding] = []
+    # Process all items first to prepare for pagination
+    original_items = response_data.get("items", [])
+    processed_items = []
 
-    for item in items_data:
+    for item in original_items:
         token = item.get("token", {})
 
-        token_instances: list[NftTokenInstance] = []
+        token_instances = []
         for instance in item.get("token_instances", []):
             # To preserve the LLM context, only specific fields for NFT instances are
             # added to the response
             metadata = instance.get("metadata", {}) or {}
             token_instances.append(
-                NftTokenInstance(
-                    id=instance.get("id", ""),
-                    name=metadata.get("name"),
-                    description=metadata.get("description"),
-                    image_url=metadata.get("image_url"),
-                    external_app_url=metadata.get("external_url"),
-                    metadata_attributes=metadata.get("attributes"),
-                )
+                {
+                    "id": instance.get("id", ""),
+                    "name": metadata.get("name"),
+                    "description": metadata.get("description"),
+                    "image_url": metadata.get("image_url"),
+                    "external_app_url": metadata.get("external_url"),
+                    "metadata_attributes": metadata.get("attributes"),
+                }
             )
 
         # To preserve the LLM context, only specific fields for NFT collections are
         # added to the response
-        collection_info = NftCollectionInfo(
-            type=token.get("type", ""),
-            address=token.get("address_hash", ""),
-            name=token.get("name"),
-            symbol=token.get("symbol"),
-            holders_count=token.get("holders_count") or 0,
-            total_supply=token.get("total_supply") or 0,
-        )
+        collection_info = {
+            "type": token.get("type", ""),
+            "address": token.get("address_hash", ""),
+            "name": token.get("name"),
+            "symbol": token.get("symbol"),
+            "holders_count": token.get("holders_count") or 0,
+            "total_supply": token.get("total_supply") or 0,
+        }
 
+        processed_item = {
+            "token": token,  # Keep original token info for cursor extraction
+            "amount": item.get("amount", ""),
+            "token_instances": token_instances,
+            "collection_info": collection_info,
+        }
+        processed_items.append(processed_item)
+
+    # Use create_items_pagination helper to handle slicing and pagination
+    sliced_items, pagination = create_items_pagination(
+        items=processed_items,
+        page_size=config.nft_page_size,
+        tool_name="nft_tokens_by_address",
+        next_call_base_params={
+            "chain_id": chain_id,
+            "address": address,
+        },
+        cursor_extractor=extract_nft_cursor_params,
+        force_pagination=False,
+    )
+
+    # Convert sliced items to NftCollectionHolding objects
+    nft_holdings: list[NftCollectionHolding] = []
+    for item in sliced_items:
+        collection_info = NftCollectionInfo(**item["collection_info"])
+        token_instances = [NftTokenInstance(**instance) for instance in item["token_instances"]]
         nft_holdings.append(
             NftCollectionHolding(
                 collection=collection_info,
-                amount=item.get("amount", ""),
+                amount=item["amount"],
                 token_instances=token_instances,
-            )
-        )
-
-    # Since there could be more than one page of collections for the same address,
-    # the pagination information is extracted from API response and added explicitly
-    # to the tool response
-    pagination = None
-    next_page_params = response_data.get("next_page_params")
-    if next_page_params:
-        next_cursor = encode_cursor(next_page_params)
-        pagination = PaginationInfo(
-            next_call=NextCallInfo(
-                tool_name="nft_tokens_by_address",
-                params={"chain_id": chain_id, "address": address, "cursor": next_cursor},
             )
         )
 
@@ -299,7 +330,7 @@ async def get_address_logs(
 
     original_items, was_truncated = _process_and_truncate_log_items(response_data.get("items", []))
 
-    log_items: list[AddressLogItem] = []
+    log_items_dicts: list[dict] = []
     # To preserve the LLM context, only specific fields are added to the response
     for item in original_items:
         curated_item = {
@@ -313,7 +344,7 @@ async def get_address_logs(
         if item.get("data_truncated"):
             curated_item["data_truncated"] = True
 
-        log_items.append(AddressLogItem(**curated_item))
+        log_items_dicts.append(curated_item)
 
     data_description = [
         "Items Structure:",
@@ -347,26 +378,18 @@ async def get_address_logs(
             f'`curl "{base_url}/api/v2/transactions/{{THE_TRANSACTION_HASH}}/logs"`',
         ]
 
-    # Since there could be more than one page of logs for the same address,
-    # the pagination information is extracted from API response and added explicitly
-    # to the tool response
-    pagination = None
-    next_page_params = response_data.get("next_page_params")
-    if next_page_params:
-        next_cursor = encode_cursor(next_page_params)
-        pagination = PaginationInfo(
-            next_call=NextCallInfo(
-                tool_name="get_address_logs",
-                params={
-                    "chain_id": chain_id,
-                    "address": address,
-                    "cursor": next_cursor,
-                },
-            )
-        )
+    sliced_items, pagination = create_items_pagination(
+        items=log_items_dicts,
+        page_size=config.logs_page_size,
+        tool_name="get_address_logs",
+        next_call_base_params={"chain_id": chain_id, "address": address},
+        cursor_extractor=extract_log_cursor_params,
+    )
+
+    sliced_log_items = [AddressLogItem(**item) for item in sliced_items]
 
     return build_tool_response(
-        data=log_items,
+        data=sliced_log_items,
         data_description=data_description,
         notes=notes,
         pagination=pagination,

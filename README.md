@@ -65,6 +65,11 @@ Which address interacts with the contract the most?
 Calculate the total gas fees paid on Ethereum by address `0xcafe...cafe` in May 2025.
 ```
 
+```plaintext
+Which 10 most recent logs were emitted by `0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7`
+before `Nov 08 2024 04:21:35 AM (-06:00 UTC)`?
+```
+
 ## Installation & Usage
 
 ### Local Installation

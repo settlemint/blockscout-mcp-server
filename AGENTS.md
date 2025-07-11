@@ -6,8 +6,16 @@
 mcp-server/
 ├── blockscout_mcp_server/      # Main Python package for the server
 │   ├── __init__.py             # Makes the directory a Python package
+│   ├── llms.txt                # Machine-readable guidance file for AI crawlers
+│   ├── api/                    # REST API implementation
+│   │   ├── __init__.py         # Initializes the api sub-package
+│   │   ├── dependencies.py     # Dependency providers for the REST API
+│   │   ├── helpers.py          # Shared utilities for REST API handlers
+│   │   └── routes.py           # REST API route definitions
 │   ├── __main__.py             # Entry point for `python -m blockscout_mcp_server`
 │   ├── server.py               # Core server logic: FastMCP instance, tool registration, CLI
+│   ├── templates/              # Static HTML templates for the web interface
+│   │   └── index.html          # Landing page for the REST API
 │   ├── config.py               # Configuration management (e.g., API keys, timeouts, cache settings)
 │   ├── constants.py            # Centralized constants used throughout the application, including data truncation limits
 │   ├── models.py               # Defines standardized Pydantic models for all tool responses
@@ -33,6 +41,9 @@ mcp-server/
 │   │   ├── test_ens_tools_integration.py       # Tool-level integration tests for ENS tools
 │   │   ├── test_search_tools_integration.py    # Tool-level integration tests for search tools
 │   │   └── test_transaction_tools_integration.py # Tool-level integration tests for transaction tools
+│   ├── api/                      # Unit tests for the REST API
+│   │   └── test_routes.py        # Tests for static API route definitions
+│   ├── test_server.py            # Tests for server CLI and startup logic
 │   ├── test_models.py            # Tests for Pydantic response models
 │   └── tools/                  # Unit test modules for each tool implementation
 │       ├── test_common.py            # Tests for shared utility functions
@@ -50,6 +61,7 @@ mcp-server/
 │       └── test_transaction_tools_helpers.py # Tests for transaction helper functions
 ├── Dockerfile                  # For building the Docker image
 ├── pytest.ini                  # Pytest configuration (excludes integration tests by default)
+├── API.md                      # Detailed documentation for the REST API
 ├── README.md                   # Project overview, setup, and usage instructions
 ├── SPEC.md                     # Technical specification and architecture documentation
 ├── TESTING.md                  # Testing instructions for HTTP mode with curl commands
@@ -65,6 +77,9 @@ mcp-server/
         * Includes detailed instructions for local setup (installing dependencies, setting environment variables) and running the server.
         * Contains instructions for building and running the server using Docker.
         * Lists all available tools and their functionalities.
+    * **`API.md`**:
+        * Provides detailed documentation for all REST API endpoints.
+        * Includes usage examples, parameter descriptions, and information on the standard response structure.
     * **`SPEC.md`**:
         * Contains technical specifications and detailed architecture documentation.
         * Outlines the system design, components interaction, and data flow.
@@ -132,6 +147,7 @@ mcp-server/
 
 3. **`blockscout_mcp_server/` (Main Python Package)**
     * **`__init__.py`**: Standard file to mark the directory as a Python package.
+    * **`llms.txt`**: Machine-readable guidance file for AI crawlers.
     * **`__main__.py`**:
         * Serves as the entry point when the package is run as a script (`python -m blockscout_mcp_server`).
         * Imports the main execution function (e.g., `run_server()`) from `server.py` and calls it.
@@ -155,6 +171,8 @@ mcp-server/
             * Parses CLI arguments and determines the mode (stdio or HTTP)
             * For stdio mode: calls `mcp.run()` for stdin/stdout communication
             * For HTTP mode: configures stateless HTTP with JSON responses and runs uvicorn server
+    * **`templates/`**:
+        * **`index.html`**: Landing page for the REST API.
     * **`config.py`**:
         * Defines a Pydantic `BaseSettings` class to manage server configuration.
         * Loads configuration values (e.g., API keys, timeouts, cache settings) from environment variables.
@@ -164,6 +182,10 @@ mcp-server/
         * Contains server instructions and other configuration strings.
         * Ensures consistency between different parts of the application.
         * Used by both server.py and tools like get_instructions.py to maintain a single source of truth.
+    * **`api/` (API layer)**:
+        * **`helpers.py`**: Shared utilities for REST API handlers, including parameter extraction and error handling.
+        * **`routes.py`**: Defines all REST API endpoints that wrap MCP tools.
+        * **`dependencies.py`**: Dependency providers for the REST API, such as a mock context for stateless calls.
     * **`tools/` (Sub-package for Tool Implementations)**
         * **`__init__.py`**: Marks `tools` as a sub-package. May re-export tool functions for easier import into `server.py`.
         * **`common.py`**:

@@ -14,9 +14,14 @@ This server wraps Blockscout APIs and exposes blockchain data—balances, tokens
 
 - Contextual blockchain data access for AI tools
 - Multi-chain support via getting Blockscout instance URLs from Chainscout
+- **Versioned REST API**: Provides a standard, web-friendly interface to all MCP tools. See [API.md](API.md) for full documentation.
 - Custom instructions for MCP host to use the server
-- Supports MCP progress notifications for multi-step tool operations, allowing clients to track execution status
-- Enhanced User Experience: Provides periodic progress updates for long-running API queries (e.g., fetching extensive transaction histories) when requested by the client, improving responsiveness
+- Intelligent context optimization to conserve LLM tokens while preserving data accessibility
+- Smart response slicing with configurable page sizes to prevent context overflow
+- Opaque cursor pagination using Base64URL-encoded strings instead of complex parameters
+- Automatic truncation of large data fields with clear indicators and access guidance
+- Standardized ToolResponse model with structured JSON responses and follow-up instructions
+- Enhanced observability with MCP progress notifications and periodic updates for long-running operations
 
 ## Technical details
 
@@ -90,7 +95,7 @@ The server runs in `stdio` mode by default:
 python -m blockscout_mcp_server
 ```
 
-**HTTP Streamable Mode:**
+**HTTP Mode (MCP only):**
 
 To run the server in HTTP Streamable mode (stateless, JSON responses):
 
@@ -104,11 +109,26 @@ You can also specify the host and port for the HTTP server:
 python -m blockscout_mcp_server --http --http-host 0.0.0.0 --http-port 8080
 ```
 
+**HTTP Mode with REST API:**
+
+To enable the versioned REST API alongside the MCP endpoint, use the `--rest` flag (which requires `--http`).
+
+```bash
+python -m blockscout_mcp_server --http --rest
+```
+
+With custom host and port:
+
+```bash
+python -m blockscout_mcp_server --http --rest --http-host 0.0.0.0 --http-port 8080
+```
+
 **CLI Options:**
 
 - `--http`: Enables HTTP Streamable mode.
 - `--http-host TEXT`: Host to bind the HTTP server to (default: `127.0.0.1`).
 - `--http-port INTEGER`: Port for the HTTP server (default: `8000`).
+- `--rest`: Enables the REST API (requires `--http`).
 
 ### Building Docker Image Locally
 
@@ -128,27 +148,39 @@ docker pull ghcr.io/blockscout/mcp-server:latest
 
 ### Running with Docker
 
-**HTTP Streamable Mode:**
+**HTTP Mode (MCP only):**
 
 To run the Docker container in HTTP mode with port mapping:
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/blockscout/mcp-server:latest python -m blockscout_mcp_server --http --http-host 0.0.0.0
+docker run --rm -p 8000:8000 ghcr.io/blockscout/mcp-server:latest --http --http-host 0.0.0.0
 ```
 
 With custom port:
 
 ```bash
-docker run --rm -p 8080:8080 ghcr.io/blockscout/mcp-server:latest python -m blockscout_mcp_server --http --http-host 0.0.0.0 --http-port 8080
+docker run --rm -p 8080:8080 ghcr.io/blockscout/mcp-server:latest --http --http-host 0.0.0.0 --http-port 8080
+```
+
+**HTTP Mode with REST API:**
+
+To run with the REST API enabled:
+
+```bash
+docker run --rm -p 8000:8000 ghcr.io/blockscout/mcp-server:latest --http --rest --http-host 0.0.0.0
 ```
 
 **Note:** When running in HTTP mode with Docker, use `--http-host 0.0.0.0` to bind to all interfaces so the server is accessible from outside the container.
 
 **Stdio Mode:** The default stdio mode is designed for use with MCP hosts/clients (like Claude Desktop, Cursor) and doesn't make sense to run directly with Docker without an MCP client managing the communication.
 
-### Configuring Claude Desktop
+### Configuring MCP Clients
 
-To use this MCP server with Claude Desktop:
+#### Using the Official Blockscout MCP Server (Recommended)
+
+The easiest way to use the Blockscout MCP server is through the official cloud-hosted instance at `https://mcp.blockscout.com/mcp/`.
+
+**Claude Desktop Setup:**
 
 1. Open Claude Desktop and click on Settings
 2. Navigate to the "Developer" section
@@ -161,8 +193,13 @@ To use this MCP server with Claude Desktop:
         "blockscout": {
           "command": "docker",
           "args": [
-            "run", "--rm", "-i",
-            "ghcr.io/blockscout/mcp-server:latest"
+            "run",
+            "--rm",
+            "-i",
+            "sparfenyuk/mcp-proxy:latest",
+            "--transport",
+            "streamablehttp",
+            "https://mcp.blockscout.com/mcp/"
           ]
         }
       }
@@ -171,6 +208,41 @@ To use this MCP server with Claude Desktop:
 
 5. Save the file and restart Claude Desktop
 6. When chatting with Claude, you can now enable the Blockscout MCP Server to allow Claude to access blockchain data
+
+**Gemini CLI Setup:**
+
+1. Add the following configuration to your `~/.gemini/settings.json` file:
+
+    ```json
+    {
+      "mcpServers": {
+        "blockscout": {
+          "httpUrl": "https://mcp.blockscout.com/mcp/",
+          "timeout": 180000
+        }
+      }
+    }
+    ```
+
+2. For detailed Gemini CLI MCP server configuration instructions, see the [official documentation](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md).
+
+#### Local Development Setup (For Developers)
+
+If you want to run the server locally for development purposes:
+
+```json
+{
+  "mcpServers": {
+    "blockscout": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "ghcr.io/blockscout/mcp-server:latest"
+      ]
+    }
+  }
+}
+```
 
 ## License
 

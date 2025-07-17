@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 import typer
@@ -112,6 +113,10 @@ def main_command(
     Use --http to enable HTTP Streamable mode.
     Use --http and --rest to enable the REST API.
     """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
     if http:
         if rest:
             print(f"Starting Blockscout MCP Server with REST API on {http_host}:{http_port}")

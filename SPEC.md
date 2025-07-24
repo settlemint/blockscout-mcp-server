@@ -295,15 +295,6 @@ This architecture provides the flexibility of a multi-protocol server without th
       ```
 
     **c) Response Slicing and Context-Aware Pagination:**
-    To prevent overwhelming the LLM with long lists of items (e.g., token holdings, transaction logs), the server implements a response slicing strategy. This conserves context while ensuring all data remains accessible through robust pagination.
-
-    - **Mechanism**: The server fetches a full page of data from the Blockscout API (typically 50 items) but returns only a smaller, configurable slice to the client (e.g., 10 items). If the original response contained more items than the slice size, pagination is initiated.
-    - **Cursor Generation**: Instead of using the `next_page_params` directly from the Blockscout API (which would skip most of the fetched items), the server generates a new pagination cursor based on the **last item of the returned slice**. This ensures the next request starts exactly where the previous one left off, providing seamless continuity.
-    - **Configuration**: The size of the slice returned to the client is configurable via environment variables (e.g., `BLOCKSCOUT_NFT_PAGE_SIZE`), allowing for fine-tuning of context usage.
-
-    This strategy combines the network efficiency of fetching larger data chunks from the backend with the context efficiency of providing smaller, digestible responses to the AI.
-
-    **c) Response Slicing and Context-Aware Pagination:**
 
     To prevent overwhelming the LLM with long lists of items (e.g., token holdings, transaction logs), the server implements a response slicing strategy. This conserves context while ensuring all data remains accessible through robust pagination.
 
@@ -374,11 +365,11 @@ The tool was renamed to `__unlock_blockchain_analysis__`.
 
 This name was chosen deliberately for several reasons based on observed LLM behavior:
 
-1.  **Creates a Strong Semantic Imperative**: The verb "unlock" implies a necessary, state-changing action that must be performed before other operations can succeed. It reframes the tool from an optional piece of information to a functional prerequisite.
+1. **Creates a Strong Semantic Imperative**: The verb "unlock" implies a necessary, state-changing action that must be performed before other operations can succeed. It reframes the tool from an optional piece of information to a functional prerequisite.
 
-2.  **Aligns with LLM's Sequential Processing**: LLMs are trained on vast amounts of code and documentation that follow a clear `initialize -> execute` or `setup -> run` pattern. The `unlock -> analyze` narrative fits this ingrained sequential model, making it a natural and logical first step for the agent to take.
+2. **Aligns with LLM's Sequential Processing**: LLMs are trained on vast amounts of code and documentation that follow a clear `initialize -> execute` or `setup -> run` pattern. The `unlock -> analyze` narrative fits this ingrained sequential model, making it a natural and logical first step for the agent to take.
 
-3.  **Provides a Coherent and Compelling Narrative**: The name, combined with a description stating that other tools are "locked," creates a simple and powerful story for the agent: "To begin my work, I must first call the `__unlock_blockchain_analysis__` tool." This is far more effective than the ambiguous `__get_instructions__` which lacks a clear call to action.
+3. **Provides a Coherent and Compelling Narrative**: The name, combined with a description stating that other tools are "locked," creates a simple and powerful story for the agent: "To begin my work, I must first call the `__unlock_blockchain_analysis__` tool." This is far more effective than the ambiguous `__get_instructions__` which lacks a clear call to action.
 
 This revised strategy, which combines the action-oriented name with a direct and explicit description, has proven to be significantly more effective at ensuring the agent performs the critical initialization step. While the probabilistic nature of LLMs means no single change can guarantee 100% compliance, this approach of structural guidance has yielded far more consistent and reliable behavior than attempts at mere persuasion.
 
@@ -438,20 +429,34 @@ sequenceDiagram
 
 The server implements two complementary forms of logging to aid both MCP clients and server operators.
 
+#### Production-Ready Logging Configuration
+
+The server addresses a fundamental logging issue with the MCP Python SDK, which uses Rich formatting by default. While Rich provides attractive multi-line, indented console output for development, it creates problematic logs for production environments.
+
+The server employs a post-initialization handler replacement strategy:
+
+1. Allow the MCP SDK to initialize normally with its Rich handlers
+2. Scan all loggers to identify Rich handlers by class name and module
+3. Replace Rich handlers with standard `StreamHandler` instances using clean formatting
+4. Preserve all other logging behavior and configuration
+
+This configuration is applied during server startup, ensuring clean single-line log output across all operational modes.
+
 #### 1. Client-Facing Progress Logging
 
 While `report_progress` is the standard for UI feedback, many MCP clients do not yet render progress notifications but do capture log messages sent via `ctx.info`. To provide essential real-time feedback for development and debugging, the server systematically pairs every progress notification with a corresponding `info` log message sent to the client.
 
 This is achieved via a centralized `report_and_log_progress` helper function. This dual-reporting mechanism ensures that:
 
-1.  **Compliant clients** can use the structured `progress` notifications to build rich UIs.
-2.  **All other clients** receive human-readable log entries (e.g., `Progress: 1.0/2.0 - Step complete`), eliminating the "black box" effect during long-running operations and improving debuggability.
+1. **Compliant clients** can use the structured `progress` notifications to build rich UIs.
+2. **All other clients** receive human-readable log entries (e.g., `Progress: 1.0/2.0 - Step complete`), eliminating the "black box" effect during long-running operations and improving debuggability.
 
 #### 2. Server-Side Tool Invocation Auditing
 
 In addition to progress reporting, the server maintains a detailed audit log of all tool invocations for operational monitoring and debugging.
 
 Implemented via the `@log_tool_invocation` decorator, these logs capture:
+
 - The name of the tool that was called.
 - The arguments provided to the tool.
 - The identity of the MCP client that initiated the call, including its **name**, **version**, and the **MCP protocol version** it is using.

@@ -238,17 +238,23 @@ This architecture provides the flexibility of a multi-protocol server without th
           }
         }
       }
-      }
-      ```
+    }
+    ```
 
-4. **Blockscout-Hosted Chain Filtering**:
+4. **Async Web3 Connection Pool**:
+   - The server uses a custom `AsyncHTTPProviderBlockscout` and `Web3Pool` to interact with Blockscout's JSON-RPC interface.
+   - Connection pooling reuses TCP connections, reducing latency and resource usage.
+   - The provider ensures request IDs never start at zero and normalizes parameters to lists for Blockscout compatibility.
+   - A shared `aiohttp` session enforces global and per-host connection limits to prevent overload.
+
+5. **Blockscout-Hosted Chain Filtering**:
 
    The `get_chains_list` tool intentionally returns only chains that are hosted
    by the Blockscout team. This ensures a consistent feature set, stable service
    levels, and the ability to authenticate requests from the MCP server. Chains
    without an official Blockscout instance are omitted.
 
-5. **Response Processing and Context Optimization**:
+6. **Response Processing and Context Optimization**:
 
    The server employs a comprehensive strategy to **conserve LLM context** by intelligently processing API responses before forwarding them to the MCP Host. This prevents overwhelming the LLM context window with excessive blockchain data, ensuring efficient tool selection and reasoning.
 
@@ -256,6 +262,7 @@ This architecture provides the flexibility of a multi-protocol server without th
    - Raw Blockscout API responses are never forwarded directly to the MCP Host
    - All responses are processed to extract only tool-relevant data
    - Large datasets (e.g., token lists with hundreds of entries) are filtered and formatted to include only essential information
+   - Contract source code is not returned by tools to conserve context; when contract metadata is needed, only the ABI may be returned (sources are omitted).
 
    **Specific Optimizations:**
 
@@ -355,6 +362,20 @@ This architecture provides the flexibility of a multi-protocol server without th
     - **`raw_input` Truncation**: If the raw hexadecimal input string exceeds `INPUT_DATA_TRUNCATION_LIMIT`, it is shortened. A new flag, `raw_input_truncated: true`, is added to the response to signal this.
     - **`decoded_input` Truncation**: The server recursively traverses the nested `parameters` of the decoded input. Any string value (e.g., a `bytes` or `string` parameter) exceeding the limit is replaced by a structured object: `{"value_sample": "...", "value_truncated": true}`. This preserves the overall structure of the decoded call while saving significant context.
     - **Instructional Note**: If any field is truncated, a note is appended to the tool's output, providing a `curl` command to retrieve the complete, untruncated data, ensuring the agent has a path to the full information if needed.
+
+7. **HTTP Request Robustness**
+
+   Blockscout HTTP requests are centralized via the helper `make_blockscout_request`. To improve resilience against transient, transport-level issues observed in real-world usage (for example, incomplete chunked reads), the helper employs a small and conservative retry policy:
+
+   - Applies only to idempotent GETs (this function is GET-only)
+   - Retries up to 3 attempts on `httpx.RequestError` (transport errors)
+   - Does not retry on `httpx.HTTPStatusError` (4xx/5xx responses)
+   - Uses short exponential backoff between attempts (0.5s, then 1.0s)
+
+   Configuration:
+   - The maximum number of retry attempts is configurable via the environment variable `BLOCKSCOUT_BS_REQUEST_MAX_RETRIES` (default: `3`).
+
+   This keeps API semantics intact, avoids masking persistent upstream problems, and improves reliability for both MCP tools and the REST API endpoints that proxy through the same business logic.
 
 ### Instructions Delivery and the `__unlock_blockchain_analysis__` Tool
 
@@ -473,3 +494,42 @@ Implemented via the `@log_tool_invocation` decorator, these logs capture:
 - The identity of the MCP client that initiated the call, including its **name**, **version**, and the **MCP protocol version** it is using.
 
 This provides a clear audit trail, helping to diagnose issues that may be specific to certain client versions or protocol implementations. For stateless calls, such as those from the REST API where no client is present, this information is gracefully omitted.
+
+### Smart Contract Interaction Tools
+
+This server exposes a tool for on-chain smart contract read-only state access. It uses the JSON-RPC `eth_call` semantics under the hood and aligns with the standardized `ToolResponse` model.
+
+- **read_contract**: Executes a read-only contract call by encoding inputs per ABI and invoking `eth_call` (also used to simulate non-view/pure functions without changing state).
+
+#### read_contract
+
+- **RPC used**: `eth_call`.
+- **Implementation**: Uses Web3.py for ABI-based input encoding and output decoding. This leverages Web3's well-tested argument handling and return value decoding.
+- **ABI requirement**: Accepts the ABI of the specific function variant to call (a single ABI object for that function signature). This avoids ambiguity when contracts overload function names.
+- **Function name**: The `function_name` parameter must match the `name` field in the provided function ABI. Although redundant, it is kept intentionally to improve LLM tool-selection behavior and may be removed later.
+- **Arguments**: The `args` parameter is a JSON array. Nested structures and complex ABIv2 types are supported (arrays, tuples, structs). Argument normalization rules:
+  - Addresses can be provided as 0x-prefixed strings; the tool normalizes and applies EIP-55 checksum internally.
+  - Numeric strings are coerced to integers.
+  - Bytes values should be provided as 0x-hex strings; nested hex strings are handled.
+  - Deep recursion is applied for lists and dicts to normalize all nested values.
+- **Block parameter**: Optional `block` (default: `latest`). Accepts a block number (integer or decimal string) or a tag such as `latest`.
+- **Other eth_call params**: Not supported/passed. No `from`, `gas`, `gasPrice`, `value`, etc., are set by this tool.
+
+#### Tested coverage and examples
+
+- Complex input and output handling for nested ABIv2 types is validated against the contract `tests/integration/Web3PyTestContract.sol` deployed on Sepolia at `0xD9a3039cfC70aF84AC9E566A2526fD3b683B995B`.
+
+#### LLM guidance
+
+- Tool and argument descriptions explicitly instruct LLMs to:
+  - Provide arguments as a JSON array (not a quoted string)
+  - Provide 0x-prefixed address strings
+  - Supply integers for numeric values (not quoted) when possible; numeric strings will be coerced
+  - Keep bytes as 0x-hex strings
+- These instructions improve the likelihood of valid `eth_call` preparation and encoding.
+
+#### Limitations
+
+- Write operations are not supported; `eth_call` does not change state.
+- No caller context (`from`) or gas simulation tuning is provided.
+- Multi-function ABI arrays are not accepted for `read_contract`; provide exactly the ABI item for the intended function signature.

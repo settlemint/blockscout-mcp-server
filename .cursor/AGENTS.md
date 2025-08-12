@@ -16,6 +16,7 @@ AI agents should consult the appropriate rule files based on the context of thei
 - **Follow** `.cursor/rules/110-new-mcp-tool.mdc` whenever creating new MCP tool functions or modifying existing ones
 - **Apply** `.cursor/rules/120-mcp-tool-arguments.mdc` rules to the tool's parameters list whenever modifying existing MCP tool functions
 - **Follow** `.cursor/rules/130-version-management.mdc` when updating the version of the MCP server
+- **Apply** `.cursor/rules/135-dxt-manifest-version.mdc` when editing `dxt/manifest.json` (changes to `server` or the `tools` list require bumping `version`)
 - **Apply** `.cursor/rules/140-tool-description.mdc` rules to the tool's description field whenever creating a new MCP tool or updating an existing one
 - **Follow** `.cursor/rules/170-mcp-server-instructions-management.mdc` when adding new MCP server instruction groups or modifying existing ones
 
@@ -30,6 +31,7 @@ AI agents should consult the appropriate rule files based on the context of thei
 - **Before modifying** any unit test files within `tests/tools/` or adding new unit tests, follow guidelines from `.cursor/rules/210-unit-testing-guidelines.mdc`
 - **Before working** with integration test files within `tests/integration/`, consult `.cursor/rules/220-integration-testing-guidelines.mdc`
 - **Apply** `.cursor/rules/230-api-route-tests.mdc` when editing `tests/api/test_routes.py`
+- **Apply** `.cursor/rules/240-terminal-path-usage.mdc` to avoid path errors in terminal commands (assume cwd is repo root; do not prefix paths with `bs-mcp-server/`)
 
 ### Code Quality & Formatting
 

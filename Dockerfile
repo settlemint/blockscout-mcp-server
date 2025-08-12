@@ -16,6 +16,7 @@ ENV PYTHONUNBUFFERED=1
 # Set defaults here to document expected environment variables
 # ENV BLOCKSCOUT_BS_API_KEY="" # It is commented out because docker build warns about sensitive data in ENV instructions
 ENV BLOCKSCOUT_BS_TIMEOUT="120.0"
+ENV BLOCKSCOUT_BS_REQUEST_MAX_RETRIES="3"
 ENV BLOCKSCOUT_BENS_URL="https://bens.services.blockscout.com"
 ENV BLOCKSCOUT_BENS_TIMEOUT="30.0"
 ENV BLOCKSCOUT_METADATA_URL="https://metadata.services.blockscout.com"
@@ -28,5 +29,8 @@ ENV BLOCKSCOUT_PROGRESS_INTERVAL_SECONDS="15.0"
 ENV BLOCKSCOUT_NFT_PAGE_SIZE="10"
 ENV BLOCKSCOUT_LOGS_PAGE_SIZE="10"
 ENV BLOCKSCOUT_ADVANCED_FILTERS_PAGE_SIZE="10"
+ENV BLOCKSCOUT_RPC_REQUEST_TIMEOUT="60.0"
+ENV BLOCKSCOUT_RPC_POOL_PER_HOST="50"
+ENV BLOCKSCOUT_MCP_USER_AGENT="Blockscout MCP"
 
 CMD ["python", "-m", "blockscout_mcp_server"]

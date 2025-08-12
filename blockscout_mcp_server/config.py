@@ -7,6 +7,7 @@ class ServerConfig(BaseSettings):
 
     bs_api_key: str = ""  # Default to empty, can be set via env
     bs_timeout: float = 120.0  # Default timeout in seconds
+    bs_request_max_retries: int = 3  # Conservative retries for transient transport errors
 
     bens_url: str = "https://bens.services.blockscout.com"  # Add this now for Phase 2
     bens_timeout: float = 30.0  # Default timeout for BENS requests
@@ -25,6 +26,13 @@ class ServerConfig(BaseSettings):
     nft_page_size: int = 10
     logs_page_size: int = 10
     advanced_filters_page_size: int = 10
+
+    # RPC connection pool configuration
+    rpc_request_timeout: float = 60.0
+    rpc_pool_per_host: int = 50
+
+    # Base name used in the User-Agent header sent to Blockscout RPC
+    mcp_user_agent: str = "Blockscout MCP"
 
 
 config = ServerConfig()

@@ -8,10 +8,17 @@ import pytest
 from eth_utils import to_checksum_address
 
 from blockscout_mcp_server.models import ContractAbiData, ContractReadData, ToolResponse
-from blockscout_mcp_server.tools.contract_tools import get_contract_abi, read_contract
+from blockscout_mcp_server.tools.contract_tools import (
+    get_contract_abi,
+    inspect_contract_code,
+    read_contract,
+)
 from blockscout_mcp_server.web3_pool import WEB3_POOL
 
+CHAIN_ID_MAINNET = "1"
 CHAIN_ID_SEPOLIA = "11155111"
+CHAIN_ID_ARBITRUM = "42161"
+
 CONTRACT_ADDRESS = "0xD9a3039cfC70aF84AC9E566A2526fD3b683B995B"
 ABI_PATH = Path(__file__).with_name("web3py_test_contract_abi.json")
 TEST_CONTRACT_ABI = json.loads(ABI_PATH.read_text())
@@ -40,7 +47,7 @@ async def _invoke(mock_ctx, function_name: str, args: list[Any]) -> Any:
 async def test_get_contract_abi_integration(mock_ctx):
     # Use the WETH contract to ensure a rich, stable ABI is returned
     address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-    result = await get_contract_abi(chain_id="1", address=address, ctx=mock_ctx)
+    result = await get_contract_abi(chain_id=CHAIN_ID_MAINNET, address=address, ctx=mock_ctx)
 
     assert isinstance(result, ToolResponse)
     assert isinstance(result.data, ContractAbiData)
@@ -64,7 +71,7 @@ async def test_read_contract_integration(mock_ctx):
     owner = "0xF977814e90dA44bFA03b6295A0616a897441aceC"
     try:
         result = await read_contract(
-            chain_id="1",
+            chain_id=CHAIN_ID_MAINNET,
             address=address,
             abi=abi,
             function_name="balanceOf",
@@ -109,7 +116,7 @@ async def test_read_contract_decodes_tuple_result(mock_ctx):
     }
     try:
         result = await read_contract(
-            chain_id="1",
+            chain_id=CHAIN_ID_MAINNET,
             address=address,
             abi=abi,
             function_name="buffer",
@@ -323,3 +330,96 @@ async def test_read_contract_sepolia_testEnum(mock_ctx):
     res = await _invoke(mock_ctx, "testEnum", [0])
     assert isinstance(res, int)
     assert 0 <= res <= 255
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inspect_vyper_contract(mock_ctx):
+    address = "0xa96832746393aA4465050580D35A1DfD626D0C6f"
+    try:
+        result = await inspect_contract_code(chain_id=CHAIN_ID_MAINNET, address=address, ctx=mock_ctx)
+    except (aiohttp.ClientError, httpx.HTTPError, OSError) as e:
+        pytest.skip(f"Network connectivity issue: {e}")
+    assert result.data.language.lower() == "vyper"
+    assert result.data.source_code_tree_structure
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inspect_flattened_solidity_contract(mock_ctx):
+    address = "0x88ad09518695c6c3712AC10a214bE5109a655671"
+    try:
+        result = await inspect_contract_code(chain_id=CHAIN_ID_MAINNET, address=address, ctx=mock_ctx)
+    except (aiohttp.ClientError, httpx.HTTPError, OSError) as e:
+        pytest.skip(f"Network connectivity issue: {e}")
+    assert result.data.source_code_tree_structure == ["EternalStorageProxy.sol"]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inspect_multipart_stylus_contract(mock_ctx):
+    address = "0xe51D13971f74CEEb1e66219E457D6F3F9C64a9e6"
+    try:
+        result = await inspect_contract_code(chain_id=CHAIN_ID_ARBITRUM, address=address, ctx=mock_ctx)
+    except (aiohttp.ClientError, httpx.HTTPError, OSError) as e:
+        pytest.skip(f"Network connectivity issue: {e}")
+    assert len(result.data.source_code_tree_structure) > 1
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inspect_single_file_solidity_contract(mock_ctx):
+    address = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    try:
+        meta = await inspect_contract_code(chain_id=CHAIN_ID_MAINNET, address=address, ctx=mock_ctx)
+        file_name = meta.data.source_code_tree_structure[0]
+        content = await inspect_contract_code(
+            chain_id=CHAIN_ID_MAINNET, address=address, file_name=file_name, ctx=mock_ctx
+        )
+    except (aiohttp.ClientError, httpx.HTTPError, OSError) as e:
+        pytest.skip(f"Network connectivity issue: {e}")
+    assert "pragma solidity" in content.data.file_content
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inspect_multipart_solidity_contract(mock_ctx):
+    address = "0x0BcDfF5A966967FfB799F5030A227a6d62cE3ea6"
+    try:
+        result = await inspect_contract_code(chain_id=CHAIN_ID_MAINNET, address=address, ctx=mock_ctx)
+    except (aiohttp.ClientError, httpx.HTTPError, OSError) as e:
+        pytest.skip(f"Network connectivity issue: {e}")
+    assert len(result.data.source_code_tree_structure) > 1
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inspect_multipart_vyper_contract(mock_ctx):
+    """Test inspection of a Vyper contract with additional source files."""
+    # This contract should have additional_sources with multiple Vyper files
+    address = "0xD80e9d69CDb26a6A036FFe08d0Dd5140Aca6945A"  # Example address on Sepolia
+    try:
+        result = await inspect_contract_code(chain_id=CHAIN_ID_SEPOLIA, address=address, ctx=mock_ctx)
+    except (aiohttp.ClientError, httpx.HTTPError, OSError) as e:
+        pytest.skip(f"Network connectivity issue: {e}")
+
+    # Assert it's a Vyper contract
+    assert result.data.language.lower() == "vyper"
+
+    # Assert it has multiple files (main file plus additional sources)
+    assert len(result.data.source_code_tree_structure) > 1
+
+    # Assert the main file is a .vy file
+    main_file = result.data.source_code_tree_structure[0]
+    assert main_file.endswith(".vy")
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_inspect_not_verified_contract(mock_ctx):
+    address = "0xc0a47dFe034B400B47bDaD5FecDa2621de6c4d95"
+    try:
+        result = await inspect_contract_code(chain_id=CHAIN_ID_MAINNET, address=address, ctx=mock_ctx)
+    except (aiohttp.ClientError, httpx.HTTPError, OSError) as e:
+        pytest.skip(f"Network connectivity issue: {e}")
+    assert result.data.source_code_tree_structure == []

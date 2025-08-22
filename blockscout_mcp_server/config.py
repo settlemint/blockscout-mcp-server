@@ -24,6 +24,9 @@ class ServerConfig(BaseSettings):
     chains_list_ttl_seconds: int = 300  # Default 5 minutes
     progress_interval_seconds: float = 15.0  # Default interval for periodic progress updates
 
+    contracts_cache_max_number: int = 10  # Default 10 contracts
+    contracts_cache_ttl_seconds: int = 3600  # Default 1 hour
+
     nft_page_size: int = 10
     logs_page_size: int = 10
     advanced_filters_page_size: int = 10

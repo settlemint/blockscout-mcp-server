@@ -45,6 +45,11 @@ class ServerConfig(BaseSettings):
     # Composite client name configuration
     intermediary_header: str = "Blockscout-MCP-Intermediary"
     intermediary_allowlist: str = "ClaudeDesktop,HigressPlugin"
+    
+    # SettleMint custom deployment configuration
+    settlemint_chain_id: str = ""
+    settlemint_blockscout_url: str = ""
+    settlemint_rpc_url: str = ""
 
 
 config = ServerConfig()

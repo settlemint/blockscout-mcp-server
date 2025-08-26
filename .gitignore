@@ -23,3 +23,10 @@ dxt/_build/
 
 # MacOS
 .DS_Store
+**/.DS_Store
+
+# Log files
+*.log
+
+# Backup files
+*.backup

@@ -73,6 +73,12 @@ async def get_blockscout_base_url(chain_id: str) -> str:
     Raises:
         ChainNotFoundError: If no Blockscout instance is found for the chain
     """
+    # SettleMint custom chain override
+    if chain_id == config.settlemint_chain_id and config.settlemint_blockscout_url:
+        # Cache the SettleMint URL and return it directly
+        await chain_cache.set(chain_id, config.settlemint_blockscout_url)
+        return config.settlemint_blockscout_url
+    
     current_time = time.monotonic()
     cached_entry = chain_cache.get(chain_id)
 

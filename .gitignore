@@ -22,11 +22,14 @@ temp/
 dxt/_build/
 
 # MacOS
-.DS_Store
-**/.DS_Store
+.DS_Store*.log
 
 # Log files
 *.log
+
+# macOS
+.DS_Store
+**/.DS_Store
 
 # Backup files
 *.backup

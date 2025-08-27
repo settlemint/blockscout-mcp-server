@@ -49,7 +49,7 @@ class ServerConfig(BaseSettings):
     # SettleMint custom deployment configuration
     settlemint_chain_id: str = ""
     settlemint_blockscout_url: str = ""
-    settlemint_rpc_url: str = ""
+    settlemint_application_access_token: str = ""
 
 
 config = ServerConfig()
